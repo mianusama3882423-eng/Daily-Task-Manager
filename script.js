@@ -33,14 +33,13 @@ import {
    ========================================================= */
 
 const firebaseConfig = {
-  apiKey: "PASTE_YOUR_API_KEY",
-  authDomain: "PASTE_YOUR_PROJECT.firebaseapp.com",
-  projectId: "PASTE_YOUR_PROJECT_ID",
-  storageBucket: "PASTE_YOUR_PROJECT.appspot.com",
-  messagingSenderId: "PASTE_YOUR_SENDER_ID",
-  appId: "PASTE_YOUR_APP_ID"
+  apiKey: "AIzaSyBHerMjZdE-OTlqtdsZ35k3V15SEyHzuVc",
+  authDomain: "daily-task-manager-6c31b.firebaseapp.com",
+  projectId: "daily-task-manager-6c31b",
+  storageBucket: "daily-task-manager-6c31b.firebasestorage.app",
+  messagingSenderId: "372365923221",
+  appId: "1:372365923221:web:fa91cd423524d150669c9c"
 };
-
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
