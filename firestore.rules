@@ -7,7 +7,7 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function myUser() {
+    function userData() {
       return get(
         /databases/$(database)/documents/users/$(request.auth.uid)
       ).data;
@@ -15,228 +15,165 @@ service cloud.firestore {
 
     function isSuperAdmin() {
       return signedIn()
-        && myUser().role == "superadmin";
+        && userData().role == "superadmin";
     }
 
     function isAdmin() {
       return signedIn()
-        && myUser().role == "admin";
+        && userData().role == "admin";
     }
 
     function isStudent() {
       return signedIn()
-        && myUser().role == "student";
+        && userData().role == "student";
     }
 
-    function activeAccount() {
-      return signedIn()
-        && myUser().active == true;
-    }
+
+    // ==============================
+    // USERS
+    // ==============================
 
     match /users/{userId} {
 
-      allow read: if activeAccount()
-        && (
-          isSuperAdmin()
-          || userId == request.auth.uid
-          || (
-            isAdmin()
-            && resource.data.role == "student"
-            && resource.data.adminId == request.auth.uid
-          )
-        );
+      // Super Admin: full access
+      allow read, write: if isSuperAdmin();
 
-      allow create: if signedIn()
-        && (
-          isSuperAdmin()
-          ||
-          (
-            isAdmin()
-            && request.resource.data.role == "student"
-            && request.resource.data.adminId == request.auth.uid
-          )
-          ||
-          (
-            request.auth.uid == userId
-            && request.resource.data.role == "admin"
-          )
-        );
+      // Every user can read own profile
+      allow read: if signedIn()
+        && request.auth.uid == userId;
 
-      allow update: if activeAccount()
-        && (
-          isSuperAdmin()
-          ||
-          (
-            isAdmin()
-            && resource.data.role == "student"
-            && resource.data.adminId == request.auth.uid
-          )
-          ||
-          (
-            request.auth.uid == userId
-            && resource.data.role == request.resource.data.role
-          )
-        );
+      // Admin can read students belonging to that Admin
+      allow read: if isAdmin()
+        && resource.data.role == "student"
+        && resource.data.adminId == request.auth.uid;
 
-      allow delete: if isSuperAdmin()
-        || (
-          isAdmin()
-          && resource.data.role == "student"
-          && resource.data.adminId == request.auth.uid
-        );
+      // Client cannot directly create users
+      allow create: if false;
+
+      // Only Super Admin can update/delete users
+      allow update, delete: if isSuperAdmin();
     }
 
-    /* TASKS */
+
+    // ==============================
+    // TASKS
+    // ==============================
 
     match /tasks/{taskId} {
 
-      allow read: if activeAccount()
-        && (
-          isSuperAdmin()
-          ||
-          (
-            isAdmin()
-            && resource.data.adminId == request.auth.uid
-          )
-          ||
-          (
-            isStudent()
-            && resource.data.studentId == request.auth.uid
-          )
-        );
+      // Super Admin
+      allow read, write: if isSuperAdmin();
 
-      allow create: if activeAccount()
-        && (
-          isSuperAdmin()
-          ||
-          (
-            isAdmin()
-            && request.resource.data.adminId == request.auth.uid
-          )
-        );
+      // Admin can read own tasks
+      allow read: if isAdmin()
+        && resource.data.adminId == request.auth.uid;
 
-      allow update: if activeAccount()
-        && (
-          isSuperAdmin()
-          ||
-          (
-            isAdmin()
-            && resource.data.adminId == request.auth.uid
-          )
-          ||
-          (
-            isStudent()
-            && resource.data.studentId == request.auth.uid
-            && request.resource.data.studentId == resource.data.studentId
-            && request.resource.data.adminId == resource.data.adminId
-          )
-        );
+      // Admin can create task for own account
+      allow create: if isAdmin()
+        && request.resource.data.adminId == request.auth.uid;
 
-      allow delete: if isSuperAdmin()
-        || (
-          isAdmin()
-          && resource.data.adminId == request.auth.uid
-        );
+      // Admin can update own task
+      allow update: if isAdmin()
+        && resource.data.adminId == request.auth.uid
+        && request.resource.data.adminId == request.auth.uid;
+
+      // Admin can delete own task
+      allow delete: if isAdmin()
+        && resource.data.adminId == request.auth.uid;
+
+      // Student can read own tasks
+      allow read: if isStudent()
+        && resource.data.studentId == request.auth.uid;
+
+      // Student can update only progress fields
+      allow update: if isStudent()
+        && resource.data.studentId == request.auth.uid
+        && request.resource.data.studentId == request.auth.uid
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            "status",
+            "acceptedAt",
+            "completedAt",
+            "completionSeconds",
+            "updatedAt"
+          ]);
     }
 
-    /* ASSIGNMENTS */
+
+    // ==============================
+    // ASSIGNMENTS
+    // ==============================
 
     match /assignments/{assignmentId} {
 
-      allow read: if activeAccount()
-        && (
-          isSuperAdmin()
-          ||
-          (
-            isAdmin()
-            && resource.data.adminId == request.auth.uid
-          )
-          ||
-          (
-            isStudent()
-            && resource.data.studentId == request.auth.uid
-          )
-        );
+      // Super Admin
+      allow read, write: if isSuperAdmin();
 
-      allow create: if activeAccount()
-        && (
-          isSuperAdmin()
-          ||
-          (
-            isAdmin()
-            && request.resource.data.adminId == request.auth.uid
-          )
-        );
+      // Admin can read own assignments
+      allow read: if isAdmin()
+        && resource.data.adminId == request.auth.uid;
 
-      allow update: if activeAccount()
-        && (
-          isSuperAdmin()
-          ||
-          (
-            isAdmin()
-            && resource.data.adminId == request.auth.uid
-          )
-          ||
-          (
-            isStudent()
-            && resource.data.studentId == request.auth.uid
-            && request.resource.data.studentId == resource.data.studentId
-            && request.resource.data.adminId == resource.data.adminId
-          )
-        );
+      // Admin can create
+      allow create: if isAdmin()
+        && request.resource.data.adminId == request.auth.uid;
 
-      allow delete: if isSuperAdmin()
-        || (
-          isAdmin()
-          && resource.data.adminId == request.auth.uid
-        );
+      // Admin can update
+      allow update: if isAdmin()
+        && resource.data.adminId == request.auth.uid
+        && request.resource.data.adminId == request.auth.uid;
+
+      // Admin can delete
+      allow delete: if isAdmin()
+        && resource.data.adminId == request.auth.uid;
+
+      // Student can read own assignments
+      allow read: if isStudent()
+        && resource.data.studentId == request.auth.uid;
+
+      // Student can submit assignment
+      allow update: if isStudent()
+        && resource.data.studentId == request.auth.uid
+        && request.resource.data.studentId == request.auth.uid
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            "submitted",
+            "submissionDate",
+            "submittedLate"
+          ]);
     }
 
-    /* TESTS */
+
+    // ==============================
+    // TESTS
+    // ==============================
 
     match /tests/{testId} {
 
-      allow read: if activeAccount()
-        && (
-          isSuperAdmin()
-          ||
-          (
-            isAdmin()
-            && resource.data.adminId == request.auth.uid
-          )
-          ||
-          (
-            isStudent()
-            && resource.data.studentId == request.auth.uid
-          )
-        );
+      // Super Admin
+      allow read, write: if isSuperAdmin();
 
-      allow create: if activeAccount()
-        && (
-          isSuperAdmin()
-          ||
-          (
-            isAdmin()
-            && request.resource.data.adminId == request.auth.uid
-          )
-        );
+      // Admin can read own tests
+      allow read: if isAdmin()
+        && resource.data.adminId == request.auth.uid;
 
-      allow update: if activeAccount()
-        && (
-          isSuperAdmin()
-          ||
-          (
-            isAdmin()
-            && resource.data.adminId == request.auth.uid
-          )
-        );
+      // Admin can create
+      allow create: if isAdmin()
+        && request.resource.data.adminId == request.auth.uid;
 
-      allow delete: if isSuperAdmin()
-        || (
-          isAdmin()
-          && resource.data.adminId == request.auth.uid
-        );
+      // Admin can update
+      allow update: if isAdmin()
+        && resource.data.adminId == request.auth.uid
+        && request.resource.data.adminId == request.auth.uid;
+
+      // Admin can delete
+      allow delete: if isAdmin()
+        && resource.data.adminId == request.auth.uid;
+
+      // Student can read own tests
+      allow read: if isStudent()
+        && resource.data.studentId == request.auth.uid;
     }
-
   }
 }
