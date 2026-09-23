@@ -1,1 +1,242 @@
+rules_version = '2';
 
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function myUser() {
+      return get(
+        /databases/$(database)/documents/users/$(request.auth.uid)
+      ).data;
+    }
+
+    function isSuperAdmin() {
+      return signedIn()
+        && myUser().role == "superadmin";
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && myUser().role == "admin";
+    }
+
+    function isStudent() {
+      return signedIn()
+        && myUser().role == "student";
+    }
+
+    function activeAccount() {
+      return signedIn()
+        && myUser().active == true;
+    }
+
+    match /users/{userId} {
+
+      allow read: if activeAccount()
+        && (
+          isSuperAdmin()
+          || userId == request.auth.uid
+          || (
+            isAdmin()
+            && resource.data.role == "student"
+            && resource.data.adminId == request.auth.uid
+          )
+        );
+
+      allow create: if signedIn()
+        && (
+          isSuperAdmin()
+          ||
+          (
+            isAdmin()
+            && request.resource.data.role == "student"
+            && request.resource.data.adminId == request.auth.uid
+          )
+          ||
+          (
+            request.auth.uid == userId
+            && request.resource.data.role == "admin"
+          )
+        );
+
+      allow update: if activeAccount()
+        && (
+          isSuperAdmin()
+          ||
+          (
+            isAdmin()
+            && resource.data.role == "student"
+            && resource.data.adminId == request.auth.uid
+          )
+          ||
+          (
+            request.auth.uid == userId
+            && resource.data.role == request.resource.data.role
+          )
+        );
+
+      allow delete: if isSuperAdmin()
+        || (
+          isAdmin()
+          && resource.data.role == "student"
+          && resource.data.adminId == request.auth.uid
+        );
+    }
+
+    /* TASKS */
+
+    match /tasks/{taskId} {
+
+      allow read: if activeAccount()
+        && (
+          isSuperAdmin()
+          ||
+          (
+            isAdmin()
+            && resource.data.adminId == request.auth.uid
+          )
+          ||
+          (
+            isStudent()
+            && resource.data.studentId == request.auth.uid
+          )
+        );
+
+      allow create: if activeAccount()
+        && (
+          isSuperAdmin()
+          ||
+          (
+            isAdmin()
+            && request.resource.data.adminId == request.auth.uid
+          )
+        );
+
+      allow update: if activeAccount()
+        && (
+          isSuperAdmin()
+          ||
+          (
+            isAdmin()
+            && resource.data.adminId == request.auth.uid
+          )
+          ||
+          (
+            isStudent()
+            && resource.data.studentId == request.auth.uid
+            && request.resource.data.studentId == resource.data.studentId
+            && request.resource.data.adminId == resource.data.adminId
+          )
+        );
+
+      allow delete: if isSuperAdmin()
+        || (
+          isAdmin()
+          && resource.data.adminId == request.auth.uid
+        );
+    }
+
+    /* ASSIGNMENTS */
+
+    match /assignments/{assignmentId} {
+
+      allow read: if activeAccount()
+        && (
+          isSuperAdmin()
+          ||
+          (
+            isAdmin()
+            && resource.data.adminId == request.auth.uid
+          )
+          ||
+          (
+            isStudent()
+            && resource.data.studentId == request.auth.uid
+          )
+        );
+
+      allow create: if activeAccount()
+        && (
+          isSuperAdmin()
+          ||
+          (
+            isAdmin()
+            && request.resource.data.adminId == request.auth.uid
+          )
+        );
+
+      allow update: if activeAccount()
+        && (
+          isSuperAdmin()
+          ||
+          (
+            isAdmin()
+            && resource.data.adminId == request.auth.uid
+          )
+          ||
+          (
+            isStudent()
+            && resource.data.studentId == request.auth.uid
+            && request.resource.data.studentId == resource.data.studentId
+            && request.resource.data.adminId == resource.data.adminId
+          )
+        );
+
+      allow delete: if isSuperAdmin()
+        || (
+          isAdmin()
+          && resource.data.adminId == request.auth.uid
+        );
+    }
+
+    /* TESTS */
+
+    match /tests/{testId} {
+
+      allow read: if activeAccount()
+        && (
+          isSuperAdmin()
+          ||
+          (
+            isAdmin()
+            && resource.data.adminId == request.auth.uid
+          )
+          ||
+          (
+            isStudent()
+            && resource.data.studentId == request.auth.uid
+          )
+        );
+
+      allow create: if activeAccount()
+        && (
+          isSuperAdmin()
+          ||
+          (
+            isAdmin()
+            && request.resource.data.adminId == request.auth.uid
+          )
+        );
+
+      allow update: if activeAccount()
+        && (
+          isSuperAdmin()
+          ||
+          (
+            isAdmin()
+            && resource.data.adminId == request.auth.uid
+          )
+        );
+
+      allow delete: if isSuperAdmin()
+        || (
+          isAdmin()
+          && resource.data.adminId == request.auth.uid
+        );
+    }
+
+  }
+}
