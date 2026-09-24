@@ -4,9 +4,7 @@ import {
   cert
 } from "firebase-admin/app";
 
-import {
-  getAuth
-} from "firebase-admin/auth";
+import { getAuth } from "firebase-admin/auth";
 
 import {
   getFirestore,
@@ -20,19 +18,18 @@ function getAdminApp() {
     return getApps()[0];
   }
 
+  const rawKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
 
-  const serviceAccount = JSON.parse(
-    process.env.FIREBASE_SERVICE_ACCOUNT_KEY
-  );
+  if (!rawKey) {
+    throw new Error("Firebase service account is not configured.");
+  }
 
+  const serviceAccount = JSON.parse(rawKey);
 
   return initializeApp({
-
     credential: cert(serviceAccount)
-
   });
 }
-
 
 
 export default async function handler(req, res) {
@@ -40,42 +37,30 @@ export default async function handler(req, res) {
   if (req.method !== "POST") {
 
     return res.status(405).json({
-
       success: false,
-
-      message: "Method not allowed"
-
+      message: "Method not allowed."
     });
   }
 
 
-
   try {
 
-    const authHeader =
-      req.headers.authorization || "";
-
+    const authHeader = req.headers.authorization || "";
 
     if (!authHeader.startsWith("Bearer ")) {
 
       return res.status(401).json({
-
         success: false,
-
         message: "Authentication required."
-
       });
     }
 
 
-    const idToken =
-      authHeader.substring(7);
-
+    const idToken = authHeader.substring(7);
 
     const app = getAdminApp();
 
     const adminAuth = getAuth(app);
-
     const db = getFirestore(app);
 
 
@@ -83,27 +68,22 @@ export default async function handler(req, res) {
       await adminAuth.verifyIdToken(idToken);
 
 
-    const requesterDoc =
-      await db
-        .collection("users")
-        .doc(decodedToken.uid)
-        .get();
+    const requesterDoc = await db
+      .collection("users")
+      .doc(decodedToken.uid)
+      .get();
 
 
     if (!requesterDoc.exists) {
 
       return res.status(403).json({
-
         success: false,
-
         message: "User profile not found."
-
       });
     }
 
 
-    const requester =
-      requesterDoc.data();
+    const requester = requesterDoc.data();
 
 
     if (
@@ -112,15 +92,10 @@ export default async function handler(req, res) {
     ) {
 
       return res.status(403).json({
-
         success: false,
-
-        message:
-          "Only Admin or Super Admin can create users."
-
+        message: "Only Admin or Super Admin can create students."
       });
     }
-
 
 
     const {
@@ -132,54 +107,69 @@ export default async function handler(req, res) {
     } = req.body || {};
 
 
+    const cleanName = String(name || "").trim();
+    const cleanEmail = String(email || "").trim().toLowerCase();
+    const cleanPassword = String(password || "");
+    const cleanClass = String(className || "").trim();
 
-    if (!name || !email || !password) {
+
+    if (!cleanName || !cleanEmail || !cleanPassword) {
 
       return res.status(400).json({
-
         success: false,
-
-        message:
-          "Name, email and password are required."
-
+        message: "Name, email and password are required."
       });
     }
 
 
-
-    if (password.length < 6) {
+    if (cleanName.length < 2) {
 
       return res.status(400).json({
-
         success: false,
-
-        message:
-          "Password must contain at least 6 characters."
-
+        message: "Please enter a valid student name."
       });
     }
 
 
+    if (cleanPassword.length < 6) {
 
-    const cleanName =
-      name.trim();
-
-    const cleanEmail =
-      email.trim().toLowerCase();
-
-
-
-    const student =
-      await adminAuth.createUser({
-
-        email: cleanEmail,
-
-        password,
-
-        displayName: cleanName
-
+      return res.status(400).json({
+        success: false,
+        message: "Password must contain at least 6 characters."
       });
+    }
 
+
+    let cleanAge = null;
+
+    if (age !== "" && age !== null && age !== undefined) {
+
+      const parsedAge = Number(age);
+
+      if (
+        !Number.isInteger(parsedAge) ||
+        parsedAge < 3 ||
+        parsedAge > 100
+      ) {
+
+        return res.status(400).json({
+          success: false,
+          message: "Please enter a valid age."
+        });
+      }
+
+      cleanAge = parsedAge;
+    }
+
+
+    const student = await adminAuth.createUser({
+
+      email: cleanEmail,
+
+      password: cleanPassword,
+
+      displayName: cleanName
+    });
 
 
     await db
@@ -193,12 +183,9 @@ export default async function handler(req, res) {
 
         email: cleanEmail,
 
-        age:
-          age !== null &&
-          age !== undefined &&
-          age !== ""
-            ? Number(age)
-            : null,
+        age: cleanAge,
+
+        className: cleanClass || null,
 
         role: "student",
 
@@ -207,49 +194,41 @@ export default async function handler(req, res) {
             ? requester.uid
             : null,
 
-        className:
-          className || "",
-
         active: true,
 
-        createdAt:
-          FieldValue.serverTimestamp()
-
+        createdAt: FieldValue.serverTimestamp()
       });
-
 
 
     return res.status(201).json({
 
       success: true,
 
-      message:
-        "Student account created successfully.",
+      message: "Student account created successfully.",
 
       uid: student.uid
-
     });
-
 
 
   } catch (error) {
 
-    console.error(error);
+    console.error("CREATE USER ERROR:", error);
+
+
+    let message = "Unable to create student account.";
+
+    if (error.code === "auth/email-already-exists") {
+      message = "This email is already registered.";
+    }
+
+    if (error.code === "auth/invalid-email") {
+      message = "Please enter a valid email address.";
+    }
 
 
     return res.status(400).json({
-
       success: false,
-
-      message:
-        error.code ===
-        "auth/email-already-exists"
-
-          ? "This email is already registered."
-
-          : error.message
-
+      message
     });
-
   }
 }
