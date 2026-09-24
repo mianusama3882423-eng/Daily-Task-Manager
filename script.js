@@ -95,37 +95,30 @@ function toast(message, type = "success") {
   let box = $("toast");
 
   if (!box) {
-
     box = document.createElement("div");
-
     box.id = "toast";
-
     document.body.appendChild(box);
   }
 
-
   box.textContent = message;
 
-  box.className =
-    `toast ${type}`;
+  box.className = `toast ${type}`;
 
+  box.style.display = "block";
+  box.classList.add("show");
 
-  setTimeout(() => {
+  clearTimeout(window.toastTimer);
 
-    box.classList.remove(
-      "show"
-    );
+  window.toastTimer = setTimeout(() => {
 
-  }, 3000);
+    box.classList.remove("show");
 
+    setTimeout(() => {
+      box.style.display = "none";
+    }, 300);
 
-  requestAnimationFrame(() => {
-
-    box.classList.add("show");
-
-  });
+  }, 2500);
 }
-
 
 // ============================================================
 // FIREBASE ERROR HANDLER
@@ -3583,7 +3576,98 @@ function setupNavigation() {
     });
 }
 
+// ============================================================
+// SIDEBAR MENU
+// ============================================================
 
+function setupMenu() {
+
+  const menuBtn =
+    $("menuBtn");
+
+  const sidebar =
+    $("sidebar");
+
+
+  if (!menuBtn || !sidebar) {
+    console.error(
+      "Menu button or sidebar not found."
+    );
+    return;
+  }
+
+
+  // Open / Close menu
+
+  menuBtn.addEventListener(
+    "click",
+    event => {
+
+      event.stopPropagation();
+
+      sidebar.classList.toggle(
+        "open"
+      );
+
+    }
+  );
+
+
+  // Menu ke bahar click karne par close
+
+  document.addEventListener(
+    "click",
+    event => {
+
+      if (
+        !sidebar.classList.contains(
+          "open"
+        )
+      ) {
+        return;
+      }
+
+
+      if (
+        !sidebar.contains(
+          event.target
+        ) &&
+        event.target !== menuBtn
+      ) {
+
+        sidebar.classList.remove(
+          "open"
+        );
+
+      }
+
+    }
+  );
+
+
+  // Kisi menu item par click ke baad
+  // mobile par sidebar close
+
+  sidebar
+    .querySelectorAll(
+      "[data-page]"
+    )
+    .forEach(item => {
+
+      item.addEventListener(
+        "click",
+        () => {
+
+          sidebar.classList.remove(
+            "open"
+          );
+
+        }
+      );
+
+    });
+
+}
 function showPage(page) {
 
   state.currentPage = page;
@@ -3953,7 +4037,6 @@ onAuthStateChanged(
 // ============================================================
 // GLOBAL INITIALIZATION
 // ============================================================
-
 document.addEventListener(
   "DOMContentLoaded",
   () => {
@@ -3967,6 +4050,8 @@ document.addEventListener(
     setupLogout();
 
     setupNavigation();
+
+    setupMenu();
 
   }
 );
