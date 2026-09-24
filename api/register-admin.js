@@ -4,7 +4,9 @@ import {
   cert
 } from "firebase-admin/app";
 
-import { getAuth } from "firebase-admin/auth";
+import {
+  getAuth
+} from "firebase-admin/auth";
 
 import {
   getFirestore,
@@ -18,16 +20,21 @@ function getAdminApp() {
     return getApps()[0];
   }
 
-  const rawKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+  const rawKey =
+    process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
 
   if (!rawKey) {
-    throw new Error("Firebase service account is not configured.");
+    throw new Error(
+      "Firebase service account is not configured."
+    );
   }
 
-  const serviceAccount = JSON.parse(rawKey);
+  const serviceAccount =
+    JSON.parse(rawKey);
 
   return initializeApp({
-    credential: cert(serviceAccount)
+    credential:
+      cert(serviceAccount)
   });
 }
 
@@ -42,7 +49,6 @@ export default async function handler(req, res) {
     });
   }
 
-
   try {
 
     const {
@@ -51,17 +57,28 @@ export default async function handler(req, res) {
       password
     } = req.body || {};
 
+    const cleanName =
+      String(name || "").trim();
 
-    const cleanName = String(name || "").trim();
-    const cleanEmail = String(email || "").trim().toLowerCase();
-    const cleanPassword = String(password || "");
+    const cleanEmail =
+      String(email || "")
+        .trim()
+        .toLowerCase();
+
+    const cleanPassword =
+      String(password || "");
 
 
-    if (!cleanName || !cleanEmail || !cleanPassword) {
+    if (
+      !cleanName ||
+      !cleanEmail ||
+      !cleanPassword
+    ) {
 
       return res.status(400).json({
         success: false,
-        message: "Name, email and password are required."
+        message:
+          "Name, email and password are required."
       });
     }
 
@@ -70,7 +87,8 @@ export default async function handler(req, res) {
 
       return res.status(400).json({
         success: false,
-        message: "Please enter a valid name."
+        message:
+          "Please enter a valid name."
       });
     }
 
@@ -79,66 +97,97 @@ export default async function handler(req, res) {
 
       return res.status(400).json({
         success: false,
-        message: "Password must contain at least 6 characters."
+        message:
+          "Password must contain at least 6 characters."
       });
     }
 
 
     const app = getAdminApp();
 
-    const adminAuth = getAuth(app);
-    const db = getFirestore(app);
+    const adminAuth =
+      getAuth(app);
+
+    const db =
+      getFirestore(app);
 
 
-    const user = await adminAuth.createUser({
-      email: cleanEmail,
-      password: cleanPassword,
-      displayName: cleanName
-    });
-
-
-    await db
-      .collection("users")
-      .doc(user.uid)
-      .set({
-
-        uid: user.uid,
-
-        name: cleanName,
-
+    const user =
+      await adminAuth.createUser({
         email: cleanEmail,
-
-        role: "admin",
-
-        active: true,
-
-        createdAt: FieldValue.serverTimestamp()
+        password: cleanPassword,
+        displayName: cleanName
       });
 
 
+    try {
+
+      await db
+        .collection("users")
+        .doc(user.uid)
+        .set({
+          uid: user.uid,
+          name: cleanName,
+          email: cleanEmail,
+          role: "admin",
+          active: true,
+          createdAt:
+            FieldValue.serverTimestamp()
+        });
+
+    } catch (firestoreError) {
+
+      try {
+        await adminAuth.deleteUser(user.uid);
+      } catch (_) {}
+
+      throw firestoreError;
+    }
+
+
     return res.status(201).json({
-
       success: true,
-
-      message: "Admin account created successfully.",
-
+      message:
+        "Admin account created successfully.",
       uid: user.uid
     });
 
 
   } catch (error) {
 
-    console.error("REGISTER ADMIN ERROR:", error);
+    console.error(
+      "REGISTER ADMIN ERROR:",
+      error
+    );
+
+    let message =
+      "Unable to create admin account.";
 
 
-    let message = "Unable to create admin account.";
-
-    if (error.code === "auth/email-already-exists") {
-      message = "This email is already registered.";
+    if (
+      error.code ===
+      "auth/email-already-exists"
+    ) {
+      message =
+        "This email is already registered.";
     }
 
-    if (error.code === "auth/invalid-email") {
-      message = "Please enter a valid email address.";
+
+    if (
+      error.code ===
+      "auth/invalid-email"
+    ) {
+      message =
+        "Please enter a valid email address.";
+    }
+
+
+    if (
+      error.code ===
+      "auth/weak-password"
+    ) {
+      message =
+        "Password is too weak.";
     }
 
 
