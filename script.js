@@ -1,20 +1,23 @@
-import { initializeApp, getApps, getApp } from
-"https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+// ============================================================
+// DAILY TASK MANAGER
+// Upgraded Firebase + Vercel Version
+// ============================================================
+
+import {
+  initializeApp
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 
 import {
   getAuth,
-  createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged
-} from
-"https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 
 import {
   getFirestore,
   collection,
   doc,
-  setDoc,
   getDoc,
   getDocs,
   addDoc,
@@ -22,15 +25,13 @@ import {
   deleteDoc,
   query,
   where,
-  orderBy,
   serverTimestamp
-} from
-"https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
-/* =========================================================
-   FIREBASE CONFIG
-   Replace these values with your Firebase project values.
-   ========================================================= */
+
+// ============================================================
+// FIREBASE CONFIG
+// ============================================================
 
 const firebaseConfig = {
   apiKey: "AIzaSyBHerMjZdE-OTlqtdsZ35k3V15SEyHzuVc",
@@ -40,2183 +41,3933 @@ const firebaseConfig = {
   messagingSenderId: "372365923221",
   appId: "1:372365923221:web:fa91cd423524d150669c9c"
 };
+
+
 const app = initializeApp(firebaseConfig);
+
 const auth = getAuth(app);
+
 const db = getFirestore(app);
 
-/*
-  Secondary Firebase app.
-  It allows an Admin to create a Student account
-  without logging the Admin out.
-*/
-let secondaryApp;
 
-function getSecondaryApp() {
-  if (!secondaryApp) {
-    const existing = getApps().find(x => x.name === "SecondaryApp");
-
-    secondaryApp = existing || initializeApp(firebaseConfig, "SecondaryApp");
-  }
-
-  return secondaryApp;
-}
+// ============================================================
+// GLOBAL STATE
+// ============================================================
 
 const state = {
+
   user: null,
+
   profile: null,
+
   students: [],
+
   admins: [],
+
   tasks: [],
+
   assignments: [],
+
   tests: [],
-  currentPage: "dashboard"
+
+  currentPage: "dashboard",
+
+  currentStudent: null
+
 };
 
-/* =========================================================
-   HELPERS
-   ========================================================= */
 
-const $ = id => document.getElementById(id);
+// ============================================================
+// SHORTCUT
+// ============================================================
+
+function $(id) {
+  return document.getElementById(id);
+}
+
+
+// ============================================================
+// TOAST
+// ============================================================
 
 function toast(message, type = "success") {
-  const box = document.createElement("div");
-  box.className = `toast ${type}`;
+
+  let box = $("toast");
+
+  if (!box) {
+
+    box = document.createElement("div");
+
+    box.id = "toast";
+
+    document.body.appendChild(box);
+  }
+
+
   box.textContent = message;
 
-  $("toast").appendChild(box);
+  box.className =
+    `toast ${type}`;
+
 
   setTimeout(() => {
-    box.remove();
-  }, 3200);
-}
 
-function escapeHTML(value) {
-  if (value === null || value === undefined) return "";
-
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function dateString(value) {
-  if (!value) return "-";
-
-  if (value.toDate) {
-    return value.toDate().toLocaleDateString();
-  }
-
-  return new Date(value).toLocaleDateString();
-}
-
-function dateTimeString(value) {
-  if (!value) return "-";
-
-  if (value.toDate) {
-    return value.toDate().toLocaleString();
-  }
-
-  return new Date(value).toLocaleString();
-}
-
-function getInitials(name) {
-  return String(name || "?")
-    .split(" ")
-    .map(x => x[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-}
-
-function percentage(a, b) {
-  if (!b || b <= 0) return 0;
-
-  return Math.min(100, Math.round((a / b) * 100));
-}
-
-function showModal(title, html) {
-  $("modalTitle").textContent = title;
-  $("modalBody").innerHTML = html;
-  $("modal").classList.remove("hidden");
-}
-
-function closeModal() {
-  $("modal").classList.add("hidden");
-}
-
-function getStudent(id) {
-  return state.students.find(s => s.id === id);
-}
-
-function getStudentName(id) {
-  const s = getStudent(id);
-  return s ? s.name : "Unknown Student";
-}
-
-function currentUserIsAdmin() {
-  return state.profile?.role === "admin";
-}
-
-function currentUserIsSuper() {
-  return state.profile?.role === "superadmin";
-}
-
-function currentUserIsStudent() {
-  return state.profile?.role === "student";
-}
-
-/* =========================================================
-   AUTH UI
-   ========================================================= */
-
-$("loginTab").onclick = () => {
-  $("loginTab").classList.add("active");
-  $("registerTab").classList.remove("active");
-
-  $("loginForm").classList.remove("hidden");
-  $("registerForm").classList.add("hidden");
-};
-
-$("registerTab").onclick = () => {
-  $("registerTab").classList.add("active");
-  $("loginTab").classList.remove("active");
-
-  $("registerForm").classList.remove("hidden");
-  $("loginForm").classList.add("hidden");
-};
-
-$("loginForm").addEventListener("submit", async e => {
-  e.preventDefault();
-
-  try {
-    const email = $("loginEmail").value.trim();
-    const password = $("loginPassword").value;
-
-    await signInWithEmailAndPassword(auth, email, password);
-
-    toast("Login successful");
-  } catch (error) {
-    toast(getFirebaseError(error), "error");
-  }
-});
-
-$("registerForm").addEventListener("submit", async e => {
-  e.preventDefault();
-
-  const name = $("registerName").value.trim();
-  const email = $("registerEmail").value.trim();
-  const password = $("registerPassword").value;
-  const confirm = $("registerConfirm").value;
-
-  if (password !== confirm) {
-    toast("Passwords do not match", "error");
-    return;
-  }
-
-  try {
-    const result = await createUserWithEmailAndPassword(
-      auth,
-      email,
-      password
+    box.classList.remove(
+      "show"
     );
 
-    await setDoc(doc(db, "users", result.user.uid), {
-      uid: result.user.uid,
-      name,
-      email,
-      role: "admin",
-      active: true,
-      createdAt: serverTimestamp()
-    });
+  }, 3000);
 
-    toast("Admin account created successfully");
-  } catch (error) {
-    toast(getFirebaseError(error), "error");
-  }
-});
+
+  requestAnimationFrame(() => {
+
+    box.classList.add("show");
+
+  });
+}
+
+
+// ============================================================
+// FIREBASE ERROR HANDLER
+// ============================================================
 
 function getFirebaseError(error) {
-  const code = error?.code || "";
+
+  if (!error) {
+    return "Something went wrong.";
+  }
+
+
+  const code =
+    error.code || "";
+
 
   const messages = {
-    "auth/email-already-in-use": "This email is already registered.",
-    "auth/invalid-email": "Invalid email address.",
-    "auth/weak-password": "Password must be at least 6 characters.",
-    "auth/invalid-credential": "Invalid email or password.",
-    "auth/user-not-found": "Account not found.",
-    "auth/wrong-password": "Incorrect password.",
-    "auth/network-request-failed": "Network error. Check your internet."
+
+    "auth/invalid-credential":
+      "Invalid email or password.",
+
+    "auth/invalid-login-credentials":
+      "Invalid email or password.",
+
+    "auth/user-not-found":
+      "Account not found.",
+
+    "auth/wrong-password":
+      "Incorrect password.",
+
+    "auth/email-already-in-use":
+      "This email is already registered.",
+
+    "auth/weak-password":
+      "Password must contain at least 6 characters.",
+
+    "auth/invalid-email":
+      "Please enter a valid email.",
+
+    "auth/too-many-requests":
+      "Too many attempts. Please try again later.",
+
+    "permission-denied":
+      "You do not have permission for this action.",
+
+    "unavailable":
+      "Firebase is temporarily unavailable."
+
   };
 
-  return messages[code] || error.message || "Something went wrong.";
+
+  return (
+    messages[code] ||
+    error.message ||
+    "Something went wrong."
+  );
 }
 
-/* =========================================================
-   AUTH STATE
-   ========================================================= */
 
-onAuthStateChanged(auth, async user => {
-  if (!user) {
-    showAuth();
-    return;
-  }
-
-  try {
-    const profileRef = doc(db, "users", user.uid);
-    const profileSnap = await getDoc(profileRef);
-
-    if (!profileSnap.exists()) {
-      await signOut(auth);
-      toast("Your account profile is missing.", "error");
-      return;
-    }
-
-    state.user = user;
-    state.profile = {
-      id: profileSnap.id,
-      ...profileSnap.data()
-    };
-
-    if (state.profile.active === false) {
-      await signOut(auth);
-      toast("Your account has been disabled.", "error");
-      return;
-    }
-
-    showApp();
-    await loadAllData();
-
-  } catch (error) {
-    console.error(error);
-    toast("Unable to load account data.", "error");
-  }
-});
+// ============================================================
+// AUTH SCREENS
+// ============================================================
 
 function showAuth() {
-  $("authScreen").classList.remove("hidden");
-  $("appScreen").classList.add("hidden");
+
+  const authScreen =
+    $("authScreen");
+
+  const appScreen =
+    $("appScreen");
+
+
+  if (authScreen) {
+    authScreen.style.display = "block";
+  }
+
+
+  if (appScreen) {
+    appScreen.style.display = "none";
+  }
 }
+
 
 function showApp() {
-  $("authScreen").classList.add("hidden");
-  $("appScreen").classList.remove("hidden");
 
-  const role = state.profile.role;
+  const authScreen =
+    $("authScreen");
 
-  $("roleLabel").textContent =
-    role === "superadmin"
-      ? "Super Admin"
-      : role === "admin"
-        ? "Admin"
-        : "Student";
+  const appScreen =
+    $("appScreen");
 
-  $("sideRole").textContent =
-    role === "superadmin"
-      ? "Super Admin"
-      : role === "admin"
-        ? "Admin / Teacher"
-        : "Student";
 
-  document.querySelectorAll(".admin-only").forEach(el => {
-    el.classList.toggle(
-      "hidden",
-      !(role === "admin" || role === "superadmin")
-    );
-  });
+  if (authScreen) {
+    authScreen.style.display = "none";
+  }
 
-  document.querySelectorAll(".super-only").forEach(el => {
-    el.classList.toggle(
-      "hidden",
-      role !== "superadmin"
-    );
-  });
 
-  document.querySelectorAll(".student-only").forEach(el => {
-    el.classList.toggle(
-      "hidden",
-      role !== "student"
-    );
-  });
+  if (appScreen) {
+    appScreen.style.display = "block";
+  }
 }
 
-/* =========================================================
-   LOGOUT
-   ========================================================= */
 
-async function logout() {
-  await signOut(auth);
-  location.reload();
+// ============================================================
+// AUTH TABS
+// ============================================================
+
+function setupAuthTabs() {
+
+  const loginTab =
+    $("loginTab");
+
+  const registerTab =
+    $("registerTab");
+
+  const loginPanel =
+    $("loginPanel");
+
+  const registerPanel =
+    $("registerPanel");
+
+
+  if (loginTab) {
+
+    loginTab.addEventListener(
+      "click",
+      () => {
+
+        loginTab.classList.add("active");
+
+        registerTab?.classList.remove(
+          "active"
+        );
+
+
+        if (loginPanel) {
+          loginPanel.style.display =
+            "block";
+        }
+
+
+        if (registerPanel) {
+          registerPanel.style.display =
+            "none";
+        }
+
+      }
+    );
+  }
+
+
+  if (registerTab) {
+
+    registerTab.addEventListener(
+      "click",
+      () => {
+
+        registerTab.classList.add("active");
+
+        loginTab?.classList.remove(
+          "active"
+        );
+
+
+        if (registerPanel) {
+          registerPanel.style.display =
+            "block";
+        }
+
+
+        if (loginPanel) {
+          loginPanel.style.display =
+            "none";
+        }
+
+      }
+    );
+  }
 }
 
-$("logoutBtn").onclick = logout;
-$("sideLogout").onclick = logout;
 
-/* =========================================================
-   NAVIGATION
-   ========================================================= */
+// ============================================================
+// ADMIN REGISTRATION
+// ============================================================
 
-document.querySelectorAll(".nav-item").forEach(btn => {
-  btn.addEventListener("click", async () => {
+function setupAdminRegistration() {
 
-    const page = btn.dataset.page;
+  const form =
+    $("registerForm");
 
-    document.querySelectorAll(".nav-item")
-      .forEach(x => x.classList.remove("active"));
 
-    btn.classList.add("active");
+  if (!form) return;
 
-    document.querySelectorAll(".page")
-      .forEach(x => x.classList.add("hidden"));
 
-    const target = $(`page-${page}`);
+  form.addEventListener(
+    "submit",
+    async e => {
 
-    if (target) {
-      target.classList.remove("hidden");
+      e.preventDefault();
+
+
+      const name =
+        $("registerName")?.value.trim();
+
+      const email =
+        $("registerEmail")?.value.trim();
+
+      const password =
+        $("registerPassword")?.value;
+
+      const confirm =
+        $("registerConfirm")?.value;
+
+
+      if (!name || !email || !password) {
+
+        toast(
+          "Please fill all required fields.",
+          "error"
+        );
+
+        return;
+      }
+
+
+      if (password !== confirm) {
+
+        toast(
+          "Passwords do not match.",
+          "error"
+        );
+
+        return;
+      }
+
+
+      if (password.length < 6) {
+
+        toast(
+          "Password must be at least 6 characters.",
+          "error"
+        );
+
+        return;
+      }
+
+
+      try {
+
+        const response =
+          await fetch(
+            "/api/register-admin",
+            {
+
+              method: "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json"
+              },
+
+              body: JSON.stringify({
+
+                name,
+
+                email,
+
+                password
+
+              })
+
+            }
+          );
+
+
+        const result =
+          await response.json();
+
+
+        if (
+          !response.ok ||
+          !result.success
+        ) {
+
+          throw new Error(
+            result.message ||
+            "Unable to create Admin account."
+          );
+        }
+
+
+        toast(
+          "Admin account created. You can now login."
+        );
+
+
+        $("loginTab")?.click();
+
+
+        if ($("loginEmail")) {
+
+          $("loginEmail").value =
+            email;
+        }
+
+
+        if ($("loginPassword")) {
+
+          $("loginPassword").value =
+            "";
+        }
+
+
+        form.reset();
+
+
+      } catch (error) {
+
+        console.error(error);
+
+
+        toast(
+          error.message ||
+          "Registration failed.",
+          "error"
+        );
+
+      }
+
     }
-
-    state.currentPage = page;
-
-    $("sidebar").classList.remove("open");
-
-    await renderPage(page);
-  });
-});
-
-$("menuBtn").onclick = () => {
-  $("sidebar").classList.toggle("open");
-};
-
-async function renderPage(page) {
-
-  if (page === "dashboard") {
-    renderDashboard();
-  }
-
-  if (page === "students") {
-    renderStudents();
-  }
-
-  if (page === "tasks") {
-    renderTasks();
-  }
-
-  if (page === "assignments") {
-    renderAssignments();
-  }
-
-  if (page === "tests") {
-    renderTests();
-  }
-
-  if (page === "admins") {
-    renderAdmins();
-  }
-
-  if (page === "myTasks") {
-    renderMyTasks();
-  }
-
-  if (page === "myAssignments") {
-    renderMyAssignments();
-  }
-
-  if (page === "myTests") {
-    renderMyTests();
-  }
+  );
 }
 
-/* =========================================================
-   LOAD DATA
-   ========================================================= */
+
+// ============================================================
+// LOGIN
+// ============================================================
+
+function setupLogin() {
+
+  const form =
+    $("loginForm");
+
+
+  if (!form) return;
+
+
+  form.addEventListener(
+    "submit",
+    async e => {
+
+      e.preventDefault();
+
+
+      const email =
+        $("loginEmail")?.value.trim();
+
+      const password =
+        $("loginPassword")?.value;
+
+
+      if (!email || !password) {
+
+        toast(
+          "Please enter email and password.",
+          "error"
+        );
+
+        return;
+      }
+
+
+      try {
+
+        await signInWithEmailAndPassword(
+          auth,
+          email,
+          password
+        );
+
+
+        toast(
+          "Login successful."
+        );
+
+
+      } catch (error) {
+
+        console.error(error);
+
+
+        toast(
+          getFirebaseError(error),
+          "error"
+        );
+
+      }
+
+    }
+  );
+}
+
+
+// ============================================================
+// LOGOUT
+// ============================================================
+
+function setupLogout() {
+
+  const buttons =
+    document.querySelectorAll(
+      "[data-action='logout'], #logoutBtn, #logoutButton"
+    );
+
+
+  buttons.forEach(button => {
+
+    button.addEventListener(
+      "click",
+      async () => {
+
+        try {
+
+          await signOut(auth);
+
+          state.user = null;
+
+          state.profile = null;
+
+          toast(
+            "Logged out successfully."
+          );
+
+        } catch (error) {
+
+          toast(
+            getFirebaseError(error),
+            "error"
+          );
+
+        }
+
+      }
+    );
+
+  });
+}
+
+
+// ============================================================
+// LOAD ALL DATA
+// ============================================================
 
 async function loadAllData() {
 
-  state.students = [];
-  state.admins = [];
-  state.tasks = [];
-  state.assignments = [];
-  state.tests = [];
+  if (!state.user ||
+      !state.profile) {
 
-  if (currentUserIsAdmin()) {
-    await loadAdminData();
+    return;
   }
 
-  if (currentUserIsSuper()) {
-    await loadSuperData();
-  }
 
-  if (currentUserIsStudent()) {
-    await loadStudentData();
-  }
+  try {
 
-  renderDashboard();
+    if (
+      state.profile.role ===
+      "superadmin"
+    ) {
+
+      await loadSuperData();
+
+    }
+
+    else if (
+      state.profile.role ===
+      "admin"
+    ) {
+
+      await loadAdminData();
+
+    }
+
+    else if (
+      state.profile.role ===
+      "student"
+    ) {
+
+      await loadStudentData();
+
+    }
+
+
+    renderEverything();
+
+
+  } catch (error) {
+
+    console.error(
+      "Data loading error:",
+      error
+    );
+
+
+    toast(
+      "Unable to load account data.",
+      "error"
+    );
+
+  }
 }
+
+
+// ============================================================
+// LOAD ADMIN DATA
+// ============================================================
 
 async function loadAdminData() {
 
-  const studentsQuery = query(
-    collection(db, "users"),
-    where("role", "==", "student"),
-    where("adminId", "==", state.user.uid)
-  );
+  const studentsQuery =
+    query(
+      collection(db, "users"),
+      where(
+        "role",
+        "==",
+        "student"
+      ),
+      where(
+        "adminId",
+        "==",
+        state.user.uid
+      )
+    );
 
-  const studentsSnap = await getDocs(studentsQuery);
 
-  state.students = studentsSnap.docs.map(d => ({
-    id: d.id,
-    ...d.data()
-  }));
+  const studentsSnap =
+    await getDocs(
+      studentsQuery
+    );
 
-  const tasksQuery = query(
-    collection(db, "tasks"),
-    where("adminId", "==", state.user.uid)
-  );
 
-  const tasksSnap = await getDocs(tasksQuery);
+  state.students =
+    studentsSnap.docs.map(
+      d => ({
+        id: d.id,
+        ...d.data()
+      })
+    );
 
-  state.tasks = tasksSnap.docs.map(d => ({
-    id: d.id,
-    ...d.data()
-  }));
 
-  const assignmentsQuery = query(
-    collection(db, "assignments"),
-    where("adminId", "==", state.user.uid)
-  );
+  const tasksQuery =
+    query(
+      collection(db, "tasks"),
+      where(
+        "adminId",
+        "==",
+        state.user.uid
+      )
+    );
 
-  const assignmentsSnap = await getDocs(assignmentsQuery);
 
-  state.assignments = assignmentsSnap.docs.map(d => ({
-    id: d.id,
-    ...d.data()
-  }));
+  const tasksSnap =
+    await getDocs(
+      tasksQuery
+    );
 
-  const testsQuery = query(
-    collection(db, "tests"),
-    where("adminId", "==", state.user.uid)
-  );
 
-  const testsSnap = await getDocs(testsQuery);
+  state.tasks =
+    tasksSnap.docs.map(
+      d => ({
+        id: d.id,
+        ...d.data()
+      })
+    );
 
-  state.tests = testsSnap.docs.map(d => ({
-    id: d.id,
-    ...d.data()
-  }));
+
+  const assignmentsQuery =
+    query(
+      collection(db, "assignments"),
+      where(
+        "adminId",
+        "==",
+        state.user.uid
+      )
+    );
+
+
+  const assignmentsSnap =
+    await getDocs(
+      assignmentsQuery
+    );
+
+
+  state.assignments =
+    assignmentsSnap.docs.map(
+      d => ({
+        id: d.id,
+        ...d.data()
+      })
+    );
+
+
+  const testsQuery =
+    query(
+      collection(db, "tests"),
+      where(
+        "adminId",
+        "==",
+        state.user.uid
+      )
+    );
+
+
+  const testsSnap =
+    await getDocs(
+      testsQuery
+    );
+
+
+  state.tests =
+    testsSnap.docs.map(
+      d => ({
+        id: d.id,
+        ...d.data()
+      })
+    );
 }
+
+
+// ============================================================
+// LOAD SUPER ADMIN DATA
+// ============================================================
 
 async function loadSuperData() {
 
-  const usersSnap = await getDocs(collection(db, "users"));
+  const usersSnap =
+    await getDocs(
+      collection(
+        db,
+        "users"
+      )
+    );
 
-  const users = usersSnap.docs.map(d => ({
-    id: d.id,
-    ...d.data()
-  }));
 
-  state.students = users.filter(x => x.role === "student");
-  state.admins = users.filter(x => x.role === "admin");
+  const allUsers =
+    usersSnap.docs.map(
+      d => ({
+        id: d.id,
+        ...d.data()
+      })
+    );
 
-  const tasksSnap = await getDocs(collection(db, "tasks"));
-  state.tasks = tasksSnap.docs.map(d => ({
-    id: d.id,
-    ...d.data()
-  }));
 
-  const assignmentsSnap = await getDocs(collection(db, "assignments"));
-  state.assignments = assignmentsSnap.docs.map(d => ({
-    id: d.id,
-    ...d.data()
-  }));
+  state.students =
+    allUsers.filter(
+      u =>
+        u.role ===
+        "student"
+    );
 
-  const testsSnap = await getDocs(collection(db, "tests"));
-  state.tests = testsSnap.docs.map(d => ({
-    id: d.id,
-    ...d.data()
-  }));
+
+  state.admins =
+    allUsers.filter(
+      u =>
+        u.role ===
+        "admin"
+    );
+
+
+  const tasksSnap =
+    await getDocs(
+      collection(
+        db,
+        "tasks"
+      )
+    );
+
+
+  state.tasks =
+    tasksSnap.docs.map(
+      d => ({
+        id: d.id,
+        ...d.data()
+      })
+    );
+
+
+  const assignmentsSnap =
+    await getDocs(
+      collection(
+        db,
+        "assignments"
+      )
+    );
+
+
+  state.assignments =
+    assignmentsSnap.docs.map(
+      d => ({
+        id: d.id,
+        ...d.data()
+      })
+    );
+
+
+  const testsSnap =
+    await getDocs(
+      collection(
+        db,
+        "tests"
+      )
+    );
+
+
+  state.tests =
+    testsSnap.docs.map(
+      d => ({
+        id: d.id,
+        ...d.data()
+      })
+    );
 }
+
+
+// ============================================================
+// LOAD STUDENT DATA
+// ============================================================
 
 async function loadStudentData() {
 
-  const taskQuery = query(
-    collection(db, "tasks"),
-    where("studentId", "==", state.user.uid)
-  );
+  const uid =
+    state.user.uid;
 
-  const tasksSnap = await getDocs(taskQuery);
 
-  state.tasks = tasksSnap.docs.map(d => ({
-    id: d.id,
-    ...d.data()
-  }));
+  const tasksQuery =
+    query(
+      collection(db, "tasks"),
+      where(
+        "studentId",
+        "==",
+        uid
+      )
+    );
 
-  const assignmentQuery = query(
-    collection(db, "assignments"),
-    where("studentId", "==", state.user.uid)
-  );
 
-  const assignmentsSnap = await getDocs(assignmentQuery);
+  const tasksSnap =
+    await getDocs(
+      tasksQuery
+    );
 
-  state.assignments = assignmentsSnap.docs.map(d => ({
-    id: d.id,
-    ...d.data()
-  }));
 
-  const testQuery = query(
-    collection(db, "tests"),
-    where("studentId", "==", state.user.uid)
-  );
+  state.tasks =
+    tasksSnap.docs.map(
+      d => ({
+        id: d.id,
+        ...d.data()
+      })
+    );
 
-  const testsSnap = await getDocs(testQuery);
 
-  state.tests = testsSnap.docs.map(d => ({
-    id: d.id,
-    ...d.data()
-  }));
+  const assignmentsQuery =
+    query(
+      collection(db, "assignments"),
+      where(
+        "studentId",
+        "==",
+        uid
+      )
+    );
+
+
+  const assignmentsSnap =
+    await getDocs(
+      assignmentsQuery
+    );
+
+
+  state.assignments =
+    assignmentsSnap.docs.map(
+      d => ({
+        id: d.id,
+        ...d.data()
+      })
+    );
+
+
+  const testsQuery =
+    query(
+      collection(db, "tests"),
+      where(
+        "studentId",
+        "==",
+        uid
+      )
+    );
+
+
+  const testsSnap =
+    await getDocs(
+      testsQuery
+    );
+
+
+  state.tests =
+    testsSnap.docs.map(
+      d => ({
+        id: d.id,
+        ...d.data()
+      })
+    );
+
+
+  state.students = [];
+
+  state.admins = [];
 }
 
-/* =========================================================
-   DASHBOARD
-   ========================================================= */
+
+// ============================================================
+// RENDER EVERYTHING
+// ============================================================
+
+function renderEverything() {
+
+  renderUserInfo();
+
+  renderDashboard();
+
+  renderStudents();
+
+  renderTasks();
+
+  renderAssignments();
+
+  renderTests();
+
+  renderProgress();
+
+  renderAdmins();
+
+  updateRoleVisibility();
+}
+
+
+// ============================================================
+// USER INFO
+// ============================================================
+
+function renderUserInfo() {
+
+  const name =
+    state.profile?.name ||
+    state.user?.email ||
+    "User";
+
+
+  document
+    .querySelectorAll(
+      "[data-user-name], #userName, #profileName"
+    )
+    .forEach(el => {
+
+      el.textContent = name;
+
+    });
+
+
+  document
+    .querySelectorAll(
+      "[data-user-email], #userEmail, #profileEmail"
+    )
+    .forEach(el => {
+
+      el.textContent =
+        state.profile?.email ||
+        state.user?.email ||
+        "";
+
+    });
+
+
+  document
+    .querySelectorAll(
+      "[data-user-role], #userRole, #profileRole"
+    )
+    .forEach(el => {
+
+      el.textContent =
+        state.profile?.role ||
+        "";
+
+    });
+}
+
+
+// ============================================================
+// ROLE VISIBILITY
+// ============================================================
+
+function updateRoleVisibility() {
+
+  const role =
+    state.profile?.role;
+
+
+  document
+    .querySelectorAll(
+      "[data-role]"
+    )
+    .forEach(el => {
+
+      const allowed =
+        el.dataset.role
+          ?.split(",")
+          .map(x => x.trim());
+
+
+      if (
+        !allowed ||
+        allowed.includes(role)
+      ) {
+
+        el.style.display = "";
+
+      } else {
+
+        el.style.display =
+          "none";
+
+      }
+
+    });
+}
+
+
+// ============================================================
+// DASHBOARD
+// ============================================================
 
 function renderDashboard() {
 
-  const role = state.profile.role;
+  const totalTasks =
+    state.tasks.length;
 
-  let stats = [];
 
-  if (role === "superadmin") {
-
-    stats = [
-      ["👨‍🏫", state.admins.length, "Admins"],
-      ["👨‍🎓", state.students.length, "Students"],
-      ["📝", state.tasks.length, "Tasks"],
-      ["📚", state.assignments.length, "Assignments"]
-    ];
-
-    $("dashboardTitle").textContent = "Super Admin Dashboard";
-    $("dashboardSubtitle").textContent =
-      "Complete system overview.";
-  }
-
-  else if (role === "admin") {
-
-    const completedTasks =
-      state.tasks.filter(x => x.status === "completed").length;
-
-    stats = [
-      ["👨‍🎓", state.students.length, "Students"],
-      ["📝", state.tasks.length, "Tasks"],
-      ["📚", state.assignments.length, "Assignments"],
-      ["🧪", state.tests.length, "Tests"]
-    ];
-
-    $("dashboardTitle").textContent = "Admin Dashboard";
-    $("dashboardSubtitle").textContent =
-      `Welcome, ${state.profile.name || "Admin"}.`;
-  }
-
-  else {
-
-    const completedTasks =
-      state.tasks.filter(x => x.status === "completed").length;
-
-    const completedAssignments =
-      state.assignments.filter(x => x.submitted).length;
-
-    stats = [
-      ["📝", state.tasks.length, "My Tasks"],
-      ["✓", completedTasks, "Completed Tasks"],
-      ["📚", state.assignments.length, "Assignments"],
-      ["🧪", state.tests.length, "Tests"]
-    ];
-
-    $("dashboardTitle").textContent = "My Dashboard";
-    $("dashboardSubtitle").textContent =
-      `Welcome, ${state.profile.name || "Student"}.`;
-  }
-
-  $("statsGrid").innerHTML = stats.map(s => `
-    <div class="stat-card">
-      <div class="icon">${s[0]}</div>
-      <div class="number">${s[1]}</div>
-      <div class="label">${s[2]}</div>
-    </div>
-  `).join("");
-
-  renderRecentActivity();
-  renderDashboardProgress();
-}
-
-function renderRecentActivity() {
-
-  let items = [];
-
-  state.tasks.slice(-5).reverse().forEach(t => {
-    items.push({
-      icon: "📝",
-      title: escapeHTML(t.title),
-      subtitle: `Task • ${dateString(t.createdAt)}`
-    });
-  });
-
-  state.assignments.slice(-3).reverse().forEach(a => {
-    items.push({
-      icon: "📚",
-      title: escapeHTML(a.title),
-      subtitle: `Assignment • ${dateString(a.givenDate)}`
-    });
-  });
-
-  if (!items.length) {
-    $("recentActivity").innerHTML =
-      `<div class="empty">No activity yet.</div>`;
-    return;
-  }
-
-  $("recentActivity").innerHTML = items.slice(0, 7).map(i => `
-    <div class="activity-item">
-      <div class="activity-icon">${i.icon}</div>
-      <div>
-        <strong>${i.title}</strong>
-        <small>${i.subtitle}</small>
-      </div>
-    </div>
-  `).join("");
-}
-
-function renderDashboardProgress() {
-
-  /*
-    Student ko progress graph nahi dikhaya jata.
-    Admin aur Super Admin ko hi progress graph milta hai.
-  */
-
-  if (currentUserIsStudent()) {
-
-    $("dashboardProgress").innerHTML = `
-      <div class="empty">
-        Progress graph is available only to Admin and Super Admin.
-      </div>
-    `;
-
-    return;
-  }
-
-  if (!state.students.length) {
-    $("dashboardProgress").innerHTML =
-      `<div class="empty">No students available.</div>`;
-    return;
-  }
-
-  const rows = state.students.slice(0, 8).map(student => {
-
-    const tasks = state.tasks.filter(
-      t => t.studentId === student.id
-    );
-
-    const completed = tasks.filter(
-      t => t.status === "completed"
+  const completedTasks =
+    state.tasks.filter(
+      task =>
+        task.status ===
+        "completed"
     ).length;
 
-    const p = percentage(completed, tasks.length);
 
-    return `
-      <div class="progress-box">
-        <div class="progress-label">
-          <span>${escapeHTML(student.name)}</span>
-          <span>${p}%</span>
-        </div>
-        <div class="progress-track">
-          <div class="progress-fill" style="width:${p}%"></div>
-        </div>
-      </div>
-    `;
-  }).join("");
+  const pendingTasks =
+    totalTasks -
+    completedTasks;
 
-  $("dashboardProgress").innerHTML = rows;
+
+  const totalAssignments =
+    state.assignments.length;
+
+
+  const submittedAssignments =
+    state.assignments.filter(
+      a =>
+        a.submitted === true
+    ).length;
+
+
+  const totalTests =
+    state.tests.length;
+
+
+  setText(
+    [
+      "totalTasks",
+      "dashboardTotalTasks"
+    ],
+    totalTasks
+  );
+
+
+  setText(
+    [
+      "completedTasks",
+      "dashboardCompletedTasks"
+    ],
+    completedTasks
+  );
+
+
+  setText(
+    [
+      "pendingTasks",
+      "dashboardPendingTasks"
+    ],
+    pendingTasks
+  );
+
+
+  setText(
+    [
+      "totalAssignments",
+      "dashboardTotalAssignments"
+    ],
+    totalAssignments
+  );
+
+
+  setText(
+    [
+      "submittedAssignments",
+      "dashboardSubmittedAssignments"
+    ],
+    submittedAssignments
+  );
+
+
+  setText(
+    [
+      "totalTests",
+      "dashboardTotalTests"
+    ],
+    totalTests
+  );
+
+
+  const progress =
+    totalTasks === 0
+      ? 0
+      : Math.round(
+          (
+            completedTasks /
+            totalTasks
+          ) * 100
+        );
+
+
+  setText(
+    [
+      "overallProgress",
+      "dashboardProgress"
+    ],
+    `${progress}%`
+  );
 }
 
-/* =========================================================
-   STUDENTS
-   ========================================================= */
 
-$("addStudentBtn").onclick = openAddStudent;
+// ============================================================
+// STUDENTS
+// ============================================================
 
-async function openAddStudent() {
+function renderStudents() {
 
-  showModal("Create Student", `
-    <form id="studentForm">
+  const containers =
+    document.querySelectorAll(
+      "#studentsList, #studentList, [data-students-list]"
+    );
 
-      <div class="form-grid">
 
-        <div>
-          <label>Student Name</label>
-          <input id="studentName" required placeholder="Student name">
-        </div>
+  containers.forEach(container => {
 
-        <div>
-          <label>Email</label>
-          <input id="studentEmail" type="email" required placeholder="student@email.com">
-        </div>
+    if (
+      state.students.length === 0
+    ) {
 
-        <div>
-          <label>Password</label>
-          <input id="studentPassword" type="password" minlength="6" required placeholder="Minimum 6 characters">
-        </div>
+      container.innerHTML =
+        `<div class="empty-state">
+          No students found.
+        </div>`;
 
-        <div>
-          <label>Class / Group</label>
-          <input id="studentClass" placeholder="Example: CIT 1st Year">
-        </div>
+      return;
+    }
 
-      </div>
 
-      <div class="form-actions">
-        <button type="button" class="secondary-btn" onclick="closeModal()">Cancel</button>
-        <button class="primary-btn">Create Student</button>
-      </div>
+    container.innerHTML =
+      state.students.map(
+        student => {
 
-    </form>
-  `);
+          const studentTasks =
+            state.tasks.filter(
+              task =>
+                task.studentId ===
+                student.id
+            );
 
-  $("studentForm").onsubmit = createStudent;
+
+          const completed =
+            studentTasks.filter(
+              task =>
+                task.status ===
+                "completed"
+            ).length;
+
+
+          const percentage =
+            studentTasks.length
+              ? Math.round(
+                  completed /
+                  studentTasks.length *
+                  100
+                )
+              : 0;
+
+
+          return `
+            <div class="student-card">
+
+              <div class="student-info">
+
+                <h3>
+                  ${escapeHtml(
+                    student.name ||
+                    "Unnamed Student"
+                  )}
+                </h3>
+
+                <p>
+                  ${escapeHtml(
+                    student.email ||
+                    ""
+                  )}
+                </p>
+
+                ${
+                  student.age
+                    ? `<p>Age: ${student.age}</p>`
+                    : ""
+                }
+
+                ${
+                  student.className
+                    ? `<p>Class: ${escapeHtml(
+                        student.className
+                      )}</p>`
+                    : ""
+                }
+
+              </div>
+
+
+              <div class="student-progress">
+
+                <strong>
+                  ${percentage}%
+                </strong>
+
+                <div class="progress-bar">
+
+                  <span
+                    style="
+                      width:${percentage}%;
+                    "
+                  ></span>
+
+                </div>
+
+              </div>
+
+
+              <div class="student-actions">
+
+                <button
+                  type="button"
+                  onclick="window.viewStudent('${student.id}')"
+                >
+                  View
+                </button>
+
+                <button
+                  type="button"
+                  class="danger"
+                  onclick="window.deleteStudent('${student.id}')"
+                >
+                  Delete
+                </button>
+
+              </div>
+
+            </div>
+          `;
+
+        }
+      ).join("");
+
+  });
 }
+
+
+// ============================================================
+// VIEW STUDENT
+// ============================================================
+
+window.viewStudent =
+  function(studentId) {
+
+    const student =
+      state.students.find(
+        s =>
+          s.id ===
+          studentId
+      );
+
+
+    if (!student) return;
+
+
+    state.currentStudent =
+      student;
+
+
+    const studentTasks =
+      state.tasks.filter(
+        t =>
+          t.studentId ===
+          studentId
+      );
+
+
+    const completed =
+      studentTasks.filter(
+        t =>
+          t.status ===
+          "completed"
+      ).length;
+
+
+    const percentage =
+      studentTasks.length
+        ? Math.round(
+            completed /
+            studentTasks.length *
+            100
+          )
+        : 0;
+
+
+    showModal(
+      "Student Progress",
+      `
+        <div class="student-detail">
+
+          <h2>
+            ${escapeHtml(
+              student.name
+            )}
+          </h2>
+
+          <p>
+            Email:
+            ${escapeHtml(
+              student.email || ""
+            )}
+          </p>
+
+          ${
+            student.age
+              ? `<p>Age: ${student.age}</p>`
+              : ""
+          }
+
+          ${
+            student.className
+              ? `<p>Class:
+                ${escapeHtml(
+                  student.className
+                )}
+              </p>`
+              : ""
+          }
+
+          <hr>
+
+          <h3>
+            Task Progress
+          </h3>
+
+          <div class="progress-bar">
+
+            <span
+              style="
+                width:${percentage}%;
+              "
+            ></span>
+
+          </div>
+
+          <p>
+            ${completed}
+            /
+            ${studentTasks.length}
+            completed
+            (${percentage}%)
+          </p>
+
+        </div>
+      `
+    );
+  };
+
+
+// ============================================================
+// DELETE STUDENT
+// ============================================================
+
+window.deleteStudent =
+  async function(studentId) {
+
+    if (
+      state.profile?.role !==
+      "superadmin"
+    ) {
+
+      toast(
+        "Only Super Admin can delete student accounts.",
+        "error"
+      );
+
+      return;
+    }
+
+
+    const student =
+      state.students.find(
+        s =>
+          s.id ===
+          studentId
+      );
+
+
+    if (!student) return;
+
+
+    const confirmed =
+      confirm(
+        `Delete ${student.name || "this student"}?`
+      );
+
+
+    if (!confirmed) return;
+
+
+    try {
+
+      await deleteDoc(
+        doc(
+          db,
+          "users",
+          studentId
+        )
+      );
+
+
+      await loadAllData();
+
+
+      toast(
+        "Student profile deleted."
+      );
+
+
+    } catch (error) {
+
+      console.error(error);
+
+
+      toast(
+        getFirebaseError(error),
+        "error"
+      );
+
+    }
+  };
+
+
+// ============================================================
+// ADD STUDENT
+// ============================================================
+
+window.openAddStudent =
+  function() {
+
+    showModal(
+      "Create Student",
+      `
+        <form id="studentForm">
+
+          <div class="form-grid">
+
+            <div>
+              <label>
+                Student Name
+              </label>
+
+              <input
+                id="studentName"
+                required
+                placeholder="Student name"
+              >
+            </div>
+
+
+            <div>
+              <label>
+                Email
+              </label>
+
+              <input
+                id="studentEmail"
+                type="email"
+                required
+                placeholder="student@email.com"
+              >
+            </div>
+
+
+            <div>
+              <label>
+                Password
+              </label>
+
+              <input
+                id="studentPassword"
+                type="password"
+                minlength="6"
+                required
+                placeholder="Minimum 6 characters"
+              >
+            </div>
+
+
+            <div>
+              <label>
+                Age
+              </label>
+
+              <input
+                id="studentAge"
+                type="number"
+                min="1"
+                max="100"
+                placeholder="Student age"
+              >
+            </div>
+
+
+            <div>
+              <label>
+                Class / Group
+              </label>
+
+              <input
+                id="studentClass"
+                placeholder="Example: CIT 1st Year"
+              >
+            </div>
+
+          </div>
+
+
+          <div class="modal-actions">
+
+            <button
+              type="submit"
+            >
+              Create Student
+            </button>
+
+            <button
+              type="button"
+              class="secondary"
+              onclick="window.closeModal()"
+            >
+              Cancel
+            </button>
+
+          </div>
+
+        </form>
+      `
+    );
+
+
+    $("studentForm").onsubmit =
+      createStudent;
+  };
+
+
+// ============================================================
+// CREATE STUDENT THROUGH VERCEL API
+// ============================================================
 
 async function createStudent(e) {
 
   e.preventDefault();
 
-  const name = $("studentName").value.trim();
-  const email = $("studentEmail").value.trim();
-  const password = $("studentPassword").value;
-  const studentClass = $("studentClass").value.trim();
+
+  const name =
+    $("studentName")
+      ?.value.trim();
+
+  const email =
+    $("studentEmail")
+      ?.value.trim();
+
+  const password =
+    $("studentPassword")
+      ?.value;
+
+  const studentClass =
+    $("studentClass")
+      ?.value.trim();
+
+  const age =
+    $("studentAge")?.value
+      ? Number(
+          $("studentAge").value
+        )
+      : null;
+
+
+  if (
+    !name ||
+    !email ||
+    !password
+  ) {
+
+    toast(
+      "Please fill all required fields.",
+      "error"
+    );
+
+    return;
+  }
+
+
+  if (
+    password.length < 6
+  ) {
+
+    toast(
+      "Password must be at least 6 characters.",
+      "error"
+    );
+
+    return;
+  }
+
 
   try {
 
-    const secondary = getSecondaryApp();
+    const currentUser =
+      auth.currentUser;
 
-    const {
-      getAuth,
-      createUserWithEmailAndPassword,
-      signOut
-    } = await import(
-      "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js"
-    );
 
-    const secondaryAuth = getAuth(secondary);
+    if (!currentUser) {
 
-    const result = await createUserWithEmailAndPassword(
-      secondaryAuth,
-      email,
-      password
-    );
+      toast(
+        "Please login again.",
+        "error"
+      );
 
-    await setDoc(doc(db, "users", result.user.uid), {
-      uid: result.user.uid,
-      name,
-      email,
-      role: "student",
-      adminId: state.user.uid,
-      className: studentClass,
-      active: true,
-      createdAt: serverTimestamp()
-    });
+      return;
+    }
 
-    await signOut(secondaryAuth);
+
+    const idToken =
+      await currentUser
+        .getIdToken(true);
+
+
+    const response =
+      await fetch(
+        "/api/create-user",
+        {
+
+          method: "POST",
+
+          headers: {
+
+            "Content-Type":
+              "application/json",
+
+            "Authorization":
+              `Bearer ${idToken}`
+
+          },
+
+          body:
+            JSON.stringify({
+
+              name,
+
+              email,
+
+              password,
+
+              age,
+
+              className:
+                studentClass
+
+            })
+
+        }
+      );
+
+
+    const result =
+      await response.json();
+
+
+    if (
+      !response.ok ||
+      !result.success
+    ) {
+
+      throw new Error(
+        result.message ||
+        "Unable to create student."
+      );
+    }
+
 
     closeModal();
 
+
     await loadAllData();
+
 
     renderStudents();
 
-    toast("Student account created successfully.");
+
+    toast(
+      "Student account created successfully."
+    );
+
 
   } catch (error) {
 
     console.error(error);
-    toast(getFirebaseError(error), "error");
-  }
-}
 
-function renderStudents() {
 
-  const search = $("studentSearch")?.value?.toLowerCase() || "";
-
-  const students = state.students.filter(s =>
-    String(s.name || "").toLowerCase().includes(search) ||
-    String(s.email || "").toLowerCase().includes(search)
-  );
-
-  if (!students.length) {
-
-    $("studentsGrid").innerHTML = `
-      <div class="empty">
-        No students found.
-      </div>
-    `;
-
-    return;
-  }
-
-  $("studentsGrid").innerHTML = students.map(student => {
-
-    const tasks = state.tasks.filter(
-      t => t.studentId === student.id
+    toast(
+      error.message ||
+      "Unable to create student.",
+      "error"
     );
 
-    const completed = tasks.filter(
-      t => t.status === "completed"
-    ).length;
-
-    const p = percentage(completed, tasks.length);
-
-    return `
-      <div class="person-card">
-
-        <div class="person-top">
-
-          <div class="avatar">
-            ${getInitials(student.name)}
-          </div>
-
-          <div>
-            <h3>${escapeHTML(student.name)}</h3>
-            <p>${escapeHTML(student.email)}</p>
-          </div>
-
-        </div>
-
-        <div class="progress-box">
-
-          <div class="progress-label">
-            <span>Task Progress</span>
-            <strong>${p}%</strong>
-          </div>
-
-          <div class="progress-track">
-            <div class="progress-fill" style="width:${p}%"></div>
-          </div>
-
-        </div>
-
-        <p>Class: ${escapeHTML(student.className || "Not set")}</p>
-
-        <div class="card-actions">
-          <button class="small-btn primary"
-            onclick="viewStudent('${student.id}')">
-            View Progress
-          </button>
-
-          <button class="small-btn danger"
-            onclick="deleteStudent('${student.id}')">
-            Delete
-          </button>
-        </div>
-
-      </div>
-    `;
-  }).join("");
-}
-
-$("studentSearch").addEventListener("input", renderStudents);
-
-window.viewStudent = async function(id) {
-
-  const student = getStudent(id);
-
-  if (!student) return;
-
-  const tasks = state.tasks.filter(t => t.studentId === id);
-  const assignments = state.assignments.filter(a => a.studentId === id);
-  const tests = state.tests.filter(t => t.studentId === id);
-
-  const completedTasks =
-    tasks.filter(t => t.status === "completed").length;
-
-  const submitted =
-    assignments.filter(a => a.submitted).length;
-
-  const taskProgress = percentage(
-    completedTasks,
-    tasks.length
-  );
-
-  const assignmentProgress = percentage(
-    submitted,
-    assignments.length
-  );
-
-  const testMarks = tests.reduce(
-    (sum, t) => sum + Number(t.obtainedMarks || 0),
-    0
-  );
-
-  const testTotal = tests.reduce(
-    (sum, t) => sum + Number(t.totalMarks || 0),
-    0
-  );
-
-  const testProgress = percentage(
-    testMarks,
-    testTotal
-  );
-
-  $("studentModalTitle").textContent = student.name;
-
-  $("studentModalBody").innerHTML = `
-
-    <div class="stats-grid">
-
-      <div class="stat-card">
-        <div class="number">${tasks.length}</div>
-        <div class="label">Tasks</div>
-      </div>
-
-      <div class="stat-card">
-        <div class="number">${taskProgress}%</div>
-        <div class="label">Task Progress</div>
-      </div>
-
-      <div class="stat-card">
-        <div class="number">${assignmentProgress}%</div>
-        <div class="label">Assignments</div>
-      </div>
-
-      <div class="stat-card">
-        <div class="number">${testProgress}%</div>
-        <div class="label">Test Performance</div>
-      </div>
-
-    </div>
-
-    <div class="panel">
-      <h3>Student Progress</h3>
-
-      ${progressLine("Tasks", taskProgress)}
-      ${progressLine("Assignments", assignmentProgress)}
-      ${progressLine("Tests", testProgress)}
-
-    </div>
-
-    <div class="panel" style="margin-top:15px">
-
-      <h3>Student Information</h3>
-
-      <p><strong>Name:</strong> ${escapeHTML(student.name)}</p>
-      <p><strong>Email:</strong> ${escapeHTML(student.email)}</p>
-      <p><strong>Class:</strong> ${escapeHTML(student.className || "-")}</p>
-
-    </div>
-  `;
-
-  $("studentModal").classList.remove("hidden");
-};
-
-function progressLine(name, value) {
-
-  return `
-    <div class="progress-box">
-      <div class="progress-label">
-        <span>${name}</span>
-        <strong>${value}%</strong>
-      </div>
-
-      <div class="progress-track">
-        <div class="progress-fill" style="width:${value}%"></div>
-      </div>
-    </div>
-  `;
-}
-
-window.deleteStudent = async function(id) {
-
-  if (!confirm("Delete this student profile?")) return;
-
-  try {
-
-    await deleteDoc(doc(db, "users", id));
-
-    state.students =
-      state.students.filter(s => s.id !== id);
-
-    renderStudents();
-
-    toast("Student profile deleted.");
-
-  } catch (error) {
-
-    toast(error.message, "error");
   }
-};
-
-/* =========================================================
-   TASKS
-   ========================================================= */
-
-$("addTaskBtn").onclick = openAddTask;
-
-function openAddTask() {
-
-  if (!state.students.length) {
-    toast("Create a student first.", "error");
-    return;
-  }
-
-  showModal("Assign Task", `
-
-    <form id="taskForm">
-
-      <div class="form-grid">
-
-        <div class="full">
-          <label>Student</label>
-
-          <select id="taskStudent" required>
-            ${state.students.map(s => `
-              <option value="${s.id}">
-                ${escapeHTML(s.name)}
-              </option>
-            `).join("")}
-          </select>
-        </div>
-
-        <div>
-          <label>Task Title</label>
-          <input id="taskTitle" required placeholder="Task title">
-        </div>
-
-        <div>
-          <label>Deadline</label>
-          <input id="taskDeadline" type="datetime-local" required>
-        </div>
-
-        <div class="full">
-          <label>Description</label>
-          <textarea id="taskDescription"
-            placeholder="Task details"></textarea>
-        </div>
-
-      </div>
-
-      <div class="form-actions">
-        <button type="button" class="secondary-btn"
-          onclick="closeModal()">Cancel</button>
-
-        <button class="primary-btn">
-          Assign Task
-        </button>
-      </div>
-
-    </form>
-  `);
-
-  $("taskForm").onsubmit = createTask;
 }
+
+
+// ============================================================
+// TASKS
+// ============================================================
+
+function renderTasks() {
+
+  const containers =
+    document.querySelectorAll(
+      "#tasksList, #taskList, [data-tasks-list]"
+    );
+
+
+  containers.forEach(container => {
+
+    if (!state.tasks.length) {
+
+      container.innerHTML =
+        `<div class="empty-state">
+          No tasks found.
+        </div>`;
+
+      return;
+    }
+
+
+    container.innerHTML =
+      state.tasks.map(
+        task => {
+
+          const status =
+            task.status ||
+            "pending";
+
+
+          return `
+            <div class="task-card">
+
+              <div>
+
+                <h3>
+                  ${escapeHtml(
+                    task.title ||
+                    task.name ||
+                    "Task"
+                  )}
+                </h3>
+
+                ${
+                  task.description
+                    ? `<p>
+                        ${escapeHtml(
+                          task.description
+                        )}
+                      </p>`
+                    : ""
+                }
+
+                <span class="status">
+                  ${escapeHtml(
+                    status
+                  )}
+                </span>
+
+              </div>
+
+
+              <div class="task-actions">
+
+                ${
+                  state.profile?.role ===
+                  "student" &&
+                  status !==
+                  "completed"
+                    ? `
+                      <button
+                        onclick="window.acceptTask('${task.id}')"
+                      >
+                        ${
+                          task.acceptedAt
+                            ? "Complete"
+                            : "Accept"
+                        }
+                      </button>
+                    `
+                    : ""
+                }
+
+
+                ${
+                  state.profile?.role ===
+                    "admin" ||
+                  state.profile?.role ===
+                    "superadmin"
+                    ? `
+                      <button
+                        class="danger"
+                        onclick="window.deleteTask('${task.id}')"
+                      >
+                        Delete
+                      </button>
+                    `
+                    : ""
+                }
+
+              </div>
+
+            </div>
+          `;
+
+        }
+      ).join("");
+
+  });
+}
+
+
+// ============================================================
+// ADD TASK
+// ============================================================
+
+window.openAddTask =
+  function() {
+
+    if (
+      state.profile?.role !==
+        "admin" &&
+      state.profile?.role !==
+        "superadmin"
+    ) {
+
+      toast(
+        "Only Admin can create tasks.",
+        "error"
+      );
+
+      return;
+    }
+
+
+    const studentOptions =
+      state.students.map(
+        student =>
+          `
+          <option
+            value="${student.id}"
+          >
+            ${escapeHtml(
+              student.name
+            )}
+          </option>
+          `
+      ).join("");
+
+
+    showModal(
+      "Create Task",
+      `
+        <form id="taskForm">
+
+          <div class="form-grid">
+
+            <div>
+              <label>
+                Task Title
+              </label>
+
+              <input
+                id="taskTitle"
+                required
+                placeholder="Task title"
+              >
+            </div>
+
+
+            <div>
+              <label>
+                Student
+              </label>
+
+              <select
+                id="taskStudent"
+                required
+              >
+                <option value="">
+                  Select Student
+                </option>
+
+                ${studentOptions}
+              </select>
+            </div>
+
+
+            <div class="full">
+
+              <label>
+                Description
+              </label>
+
+              <textarea
+                id="taskDescription"
+                placeholder="Task description"
+              ></textarea>
+
+            </div>
+
+          </div>
+
+
+          <div class="modal-actions">
+
+            <button type="submit">
+              Create Task
+            </button>
+
+            <button
+              type="button"
+              class="secondary"
+              onclick="window.closeModal()"
+            >
+              Cancel
+            </button>
+
+          </div>
+
+        </form>
+      `
+    );
+
+
+    $("taskForm").onsubmit =
+      createTask;
+  };
+
+
+// ============================================================
+// CREATE TASK
+// ============================================================
 
 async function createTask(e) {
 
   e.preventDefault();
 
-  const studentId = $("taskStudent").value;
+
+  const title =
+    $("taskTitle")
+      ?.value.trim();
+
+  const description =
+    $("taskDescription")
+      ?.value.trim();
+
+  const studentId =
+    $("taskStudent")
+      ?.value;
+
+
+  if (!title || !studentId) {
+
+    toast(
+      "Please fill all required fields.",
+      "error"
+    );
+
+    return;
+  }
+
 
   try {
 
-    await addDoc(collection(db, "tasks"), {
+    await addDoc(
+      collection(
+        db,
+        "tasks"
+      ),
+      {
 
-      adminId: state.user.uid,
+        title,
 
-      studentId,
+        description,
 
-      title: $("taskTitle").value.trim(),
+        studentId,
 
-      description:
-        $("taskDescription").value.trim(),
+        adminId:
+          state.user.uid,
 
-      deadline:
-        $("taskDeadline").value,
+        status:
+          "pending",
 
-      assignedAt:
-        new Date().toISOString(),
+        assignedAt:
+          new Date().toISOString(),
 
-      status: "pending",
+        acceptedAt:
+          null,
 
-      acceptedAt: null,
+        completedAt:
+          null,
 
-      completedAt: null,
+        completionSeconds:
+          null,
 
-      completionSeconds: null,
+        createdAt:
+          serverTimestamp(),
 
-      createdAt: serverTimestamp()
+        updatedAt:
+          serverTimestamp()
 
-    });
+      }
+    );
+
 
     closeModal();
 
+
     await loadAllData();
 
-    renderTasks();
 
-    toast("Task assigned successfully.");
+    toast(
+      "Task created successfully."
+    );
+
 
   } catch (error) {
 
-    toast(error.message, "error");
+    console.error(error);
+
+
+    toast(
+      getFirebaseError(error),
+      "error"
+    );
+
   }
 }
 
-function renderTasks() {
 
-  if (!state.tasks.length) {
+// ============================================================
+// ACCEPT / COMPLETE TASK
+// ============================================================
 
-    $("tasksTable").innerHTML =
-      `<div class="empty">No tasks yet.</div>`;
+window.acceptTask =
+  async function(taskId) {
 
-    return;
-  }
+    const task =
+      state.tasks.find(
+        t =>
+          t.id ===
+          taskId
+      );
 
-  $("tasksTable").innerHTML = `
 
-    <table>
+    if (!task) return;
 
-      <thead>
-        <tr>
-          <th>Task</th>
-          <th>Student</th>
-          <th>Assigned</th>
-          <th>Deadline</th>
-          <th>Status</th>
-          <th>Completion Time</th>
-          <th>Action</th>
-        </tr>
-      </thead>
 
-      <tbody>
+    try {
 
-        ${state.tasks.map(task => `
+      const now =
+        new Date();
 
-          <tr>
 
-            <td>
-              <strong>${escapeHTML(task.title)}</strong>
-            </td>
+      if (!task.acceptedAt) {
 
-            <td>${escapeHTML(getStudentName(task.studentId))}</td>
+        await updateDoc(
+          doc(
+            db,
+            "tasks",
+            taskId
+          ),
+          {
 
-            <td>${dateTimeString(task.assignedAt)}</td>
+            status:
+              "accepted",
 
-            <td>${dateTimeString(task.deadline)}</td>
+            acceptedAt:
+              now.toISOString(),
 
-            <td>
-              <span class="status ${task.status === "completed" ? "completed" : "pending"}">
-                ${escapeHTML(task.status || "pending")}
-              </span>
-            </td>
+            updatedAt:
+              serverTimestamp()
 
-            <td>
-              ${formatSeconds(task.completionSeconds)}
-            </td>
+          }
+        );
 
-            <td>
 
-              <button
-                class="small-btn danger"
-                onclick="deleteTask('${task.id}')">
-                Delete
-              </button>
+        toast(
+          "Task accepted."
+        );
 
-            </td>
-
-          </tr>
-
-        `).join("")}
-
-      </tbody>
-
-    </table>
-  `;
-}
-
-function formatSeconds(seconds) {
-
-  if (!seconds) return "-";
-
-  const s = Number(seconds);
-
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-
-  return `${h}h ${m}m ${sec}s`;
-}
-
-window.deleteTask = async function(id) {
-
-  if (!confirm("Delete this task?")) return;
-
-  await deleteDoc(doc(db, "tasks", id));
-
-  await loadAllData();
-
-  renderTasks();
-
-  toast("Task deleted.");
-};
-
-/* =========================================================
-   STUDENT TASKS
-   ========================================================= */
-
-function renderMyTasks() {
-
-  if (!state.tasks.length) {
-
-    $("myTasksGrid").innerHTML =
-      `<div class="empty">No tasks assigned to you.</div>`;
-
-    return;
-  }
-
-  $("myTasksGrid").innerHTML =
-    state.tasks.map(task => {
-
-      let action = "";
-
-      if (task.status === "completed") {
-
-        action = `
-          <span class="status completed">
-            Completed
-          </span>
-        `;
-
-      } else if (!task.acceptedAt) {
-
-        action = `
-          <button class="small-btn primary"
-            onclick="acceptTask('${task.id}')">
-            Accept Task
-          </button>
-        `;
 
       } else {
 
-        action = `
-          <button class="small-btn primary"
-            onclick="completeTask('${task.id}')">
-            Complete Task
-          </button>
-        `;
+        const acceptedTime =
+          new Date(
+            task.acceptedAt
+          );
+
+
+        const completionSeconds =
+          Math.max(
+            0,
+            Math.floor(
+              (
+                now -
+                acceptedTime
+              ) / 1000
+            )
+          );
+
+
+        await updateDoc(
+          doc(
+            db,
+            "tasks",
+            taskId
+          ),
+          {
+
+            status:
+              "completed",
+
+            completedAt:
+              now.toISOString(),
+
+            completionSeconds,
+
+            updatedAt:
+              serverTimestamp()
+
+          }
+        );
+
+
+        toast(
+          "Task completed."
+        );
       }
 
-      return `
-        <div class="task-card">
 
-          <h3>${escapeHTML(task.title)}</h3>
+      await loadAllData();
 
-          <p>${escapeHTML(task.description || "No description")}</p>
 
-          <p>
-            <strong>Assigned:</strong>
-            ${dateTimeString(task.assignedAt)}
-          </p>
+    } catch (error) {
 
-          <p>
-            <strong>Deadline:</strong>
-            ${dateTimeString(task.deadline)}
-          </p>
+      console.error(error);
 
-          <div class="card-actions">
-            ${action}
-          </div>
 
-        </div>
-      `;
+      toast(
+        getFirebaseError(error),
+        "error"
+      );
 
-    }).join("");
-}
+    }
+  };
 
-window.acceptTask = async function(id) {
 
-  try {
+// ============================================================
+// DELETE TASK
+// ============================================================
 
-    await updateDoc(doc(db, "tasks", id), {
+window.deleteTask =
+  async function(taskId) {
 
-      acceptedAt: new Date().toISOString(),
+    if (
+      state.profile?.role !==
+        "admin" &&
+      state.profile?.role !==
+        "superadmin"
+    ) {
 
-      status: "active"
+      return;
+    }
 
-    });
 
-    await loadAllData();
+    if (
+      !confirm(
+        "Delete this task?"
+      )
+    ) {
 
-    renderMyTasks();
+      return;
+    }
 
-    toast("Task accepted.");
 
-  } catch (error) {
+    try {
 
-    toast(error.message, "error");
-  }
-};
+      await deleteDoc(
+        doc(
+          db,
+          "tasks",
+          taskId
+        )
+      );
 
-window.completeTask = async function(id) {
 
-  const task = state.tasks.find(x => x.id === id);
+      await loadAllData();
 
-  if (!task) return;
 
-  const accepted =
-    new Date(task.acceptedAt).getTime();
+      toast(
+        "Task deleted."
+      );
 
-  const completed =
-    Date.now();
 
-  const completionSeconds =
-    Math.max(
-      0,
-      Math.floor((completed - accepted) / 1000)
+    } catch (error) {
+
+      console.error(error);
+
+
+      toast(
+        getFirebaseError(error),
+        "error"
+      );
+
+    }
+  };
+
+
+// ============================================================
+// ASSIGNMENTS
+// ============================================================
+
+function renderAssignments() {
+
+  const containers =
+    document.querySelectorAll(
+      "#assignmentsList, #assignmentList, [data-assignments-list]"
     );
 
-  await updateDoc(doc(db, "tasks", id), {
 
-    completedAt: new Date().toISOString(),
+  containers.forEach(container => {
 
-    completionSeconds,
+    if (
+      !state.assignments.length
+    ) {
 
-    status: "completed"
+      container.innerHTML =
+        `<div class="empty-state">
+          No assignments found.
+        </div>`;
+
+      return;
+    }
+
+
+    container.innerHTML =
+      state.assignments.map(
+        assignment => {
+
+          return `
+            <div class="assignment-card">
+
+              <h3>
+                ${escapeHtml(
+                  assignment.title ||
+                  "Assignment"
+                )}
+              </h3>
+
+              ${
+                assignment.description
+                  ? `<p>
+                      ${escapeHtml(
+                        assignment.description
+                      )}
+                    </p>`
+                  : ""
+              }
+
+              <p>
+                Given:
+                ${escapeHtml(
+                  assignment.givenDate ||
+                  "-"
+                )}
+              </p>
+
+              ${
+                assignment.deadline
+                  ? `<p>
+                      Deadline:
+                      ${escapeHtml(
+                        assignment.deadline
+                      )}
+                    </p>`
+                  : ""
+              }
+
+              ${
+                state.profile?.role ===
+                "student"
+                  ? `
+                    <p>
+                      Status:
+                      ${
+                        assignment.submitted
+                          ? (
+                              assignment.submittedLate
+                                ? "Submitted Late"
+                                : "Submitted"
+                            )
+                          : "Not Submitted"
+                      }
+                    </p>
+
+                    ${
+                      !assignment.submitted
+                        ? `
+                          <button
+                            onclick="window.submitAssignment('${assignment.id}')"
+                          >
+                            Submit
+                          </button>
+                        `
+                        : ""
+                    }
+                  `
+                  : `
+                    <p>
+                      Marks:
+                      ${
+                        assignment.obtainedMarks ??
+                        "-"
+                      }
+                      /
+                      ${
+                        assignment.totalMarks ??
+                        "-"
+                      }
+                    </p>
+
+                    <button
+                      class="danger"
+                      onclick="window.deleteAssignment('${assignment.id}')"
+                    >
+                      Delete
+                    </button>
+                  `
+              }
+
+            </div>
+          `;
+
+        }
+      ).join("");
 
   });
-
-  await loadAllData();
-
-  renderMyTasks();
-
-  toast("Task completed successfully.");
-};
-
-/* =========================================================
-   ASSIGNMENTS
-   ========================================================= */
-
-$("addAssignmentBtn").onclick = openAddAssignment;
-
-function openAddAssignment() {
-
-  if (!state.students.length) {
-
-    toast("Create a student first.", "error");
-
-    return;
-  }
-
-  showModal("Create Assignment", `
-
-    <form id="assignmentForm">
-
-      <div class="form-grid">
-
-        <div class="full">
-          <label>Student</label>
-
-          <select id="assignmentStudent" required>
-
-            ${state.students.map(s => `
-              <option value="${s.id}">
-                ${escapeHTML(s.name)}
-              </option>
-            `).join("")}
-
-          </select>
-        </div>
-
-        <div>
-          <label>Assignment Title</label>
-          <input id="assignmentTitle" required>
-        </div>
-
-        <div>
-          <label>Total Marks</label>
-          <input id="assignmentTotal" type="number" min="0" required>
-        </div>
-
-        <div>
-          <label>Given Date</label>
-          <input id="assignmentDate" type="date" required>
-        </div>
-
-        <div>
-          <label>Submission Deadline</label>
-          <input id="assignmentDeadline" type="date" required>
-        </div>
-
-        <div class="full">
-          <label>Description</label>
-          <textarea id="assignmentDescription"></textarea>
-        </div>
-
-      </div>
-
-      <div class="form-actions">
-
-        <button type="button"
-          class="secondary-btn"
-          onclick="closeModal()">
-          Cancel
-        </button>
-
-        <button class="primary-btn">
-          Create Assignment
-        </button>
-
-      </div>
-
-    </form>
-  `);
-
-  $("assignmentForm").onsubmit =
-    createAssignment;
 }
+
+
+// ============================================================
+// ADD ASSIGNMENT
+// ============================================================
+
+window.openAddAssignment =
+  function() {
+
+    const studentOptions =
+      state.students.map(
+        student =>
+          `
+          <option
+            value="${student.id}"
+          >
+            ${escapeHtml(
+              student.name
+            )}
+          </option>
+          `
+      ).join("");
+
+
+    showModal(
+      "Create Assignment",
+      `
+        <form id="assignmentForm">
+
+          <div class="form-grid">
+
+            <div>
+              <label>
+                Assignment Title
+              </label>
+
+              <input
+                id="assignmentTitle"
+                required
+                placeholder="Assignment title"
+              >
+            </div>
+
+
+            <div>
+              <label>
+                Student
+              </label>
+
+              <select
+                id="assignmentStudent"
+                required
+              >
+                <option value="">
+                  Select Student
+                </option>
+
+                ${studentOptions}
+              </select>
+            </div>
+
+
+            <div>
+              <label>
+                Given Date
+              </label>
+
+              <input
+                id="assignmentGivenDate"
+                type="date"
+                required
+              >
+            </div>
+
+
+            <div>
+              <label>
+                Submission Deadline
+              </label>
+
+              <input
+                id="assignmentDeadline"
+                type="date"
+              >
+            </div>
+
+
+            <div>
+              <label>
+                Total Marks
+              </label>
+
+              <input
+                id="assignmentTotalMarks"
+                type="number"
+                min="0"
+                placeholder="100"
+              >
+            </div>
+
+          </div>
+
+
+          <div class="modal-actions">
+
+            <button type="submit">
+              Create Assignment
+            </button>
+
+            <button
+              type="button"
+              class="secondary"
+              onclick="window.closeModal()"
+            >
+              Cancel
+            </button>
+
+          </div>
+
+        </form>
+      `
+    );
+
+
+    $("assignmentForm").onsubmit =
+      createAssignment;
+  };
+
+
+// ============================================================
+// CREATE ASSIGNMENT
+// ============================================================
 
 async function createAssignment(e) {
 
   e.preventDefault();
 
-  await addDoc(collection(db, "assignments"), {
 
-    adminId: state.user.uid,
+  const title =
+    $("assignmentTitle")
+      ?.value.trim();
 
-    studentId:
-      $("assignmentStudent").value,
+  const studentId =
+    $("assignmentStudent")
+      ?.value;
 
-    title:
-      $("assignmentTitle").value.trim(),
+  const givenDate =
+    $("assignmentGivenDate")
+      ?.value;
 
-    description:
-      $("assignmentDescription").value.trim(),
+  const deadline =
+    $("assignmentDeadline")
+      ?.value;
 
-    totalMarks:
-      Number($("assignmentTotal").value),
+  const totalMarks =
+    $("assignmentTotalMarks")
+      ?.value;
 
-    givenDate:
-      $("assignmentDate").value,
 
-    deadline:
-      $("assignmentDeadline").value,
+  if (
+    !title ||
+    !studentId ||
+    !givenDate
+  ) {
 
-    submitted: false,
-
-    submissionDate: null,
-
-    obtainedMarks: null,
-
-    submittedLate: false,
-
-    createdAt: serverTimestamp()
-
-  });
-
-  closeModal();
-
-  await loadAllData();
-
-  renderAssignments();
-
-  toast("Assignment created.");
-}
-
-function renderAssignments() {
-
-  if (!state.assignments.length) {
-
-    $("assignmentsTable").innerHTML =
-      `<div class="empty">No assignments yet.</div>`;
+    toast(
+      "Please fill all required fields.",
+      "error"
+    );
 
     return;
   }
 
-  $("assignmentsTable").innerHTML = `
 
-    <table>
+  try {
 
-      <thead>
-        <tr>
-          <th>Assignment</th>
-          <th>Student</th>
-          <th>Given</th>
-          <th>Deadline</th>
-          <th>Submitted</th>
-          <th>Marks</th>
-          <th>Action</th>
-        </tr>
-      </thead>
+    await addDoc(
+      collection(
+        db,
+        "assignments"
+      ),
+      {
 
-      <tbody>
+        title,
 
-        ${state.assignments.map(a => `
+        studentId,
 
-          <tr>
+        adminId:
+          state.user.uid,
 
-            <td>
-              <strong>${escapeHTML(a.title)}</strong>
-            </td>
+        givenDate,
 
-            <td>${escapeHTML(getStudentName(a.studentId))}</td>
+        deadline:
+          deadline || null,
 
-            <td>${dateString(a.givenDate)}</td>
+        totalMarks:
+          totalMarks
+            ? Number(totalMarks)
+            : null,
 
-            <td>${dateString(a.deadline)}</td>
+        obtainedMarks:
+          null,
 
-            <td>
+        submitted:
+          false,
 
-              ${
-                a.submitted
-                ? `<span class="status completed">
-                    ${dateString(a.submissionDate)}
-                   </span>`
-                : `<span class="status pending">
-                    Not submitted
-                   </span>`
-              }
+        submissionDate:
+          null,
 
-            </td>
+        submittedLate:
+          false,
 
-            <td>
-              ${a.obtainedMarks ?? "-"} /
-              ${a.totalMarks}
-            </td>
+        createdAt:
+          serverTimestamp()
 
-            <td>
+      }
+    );
 
-              <button class="small-btn primary"
-                onclick="editAssignment('${a.id}')">
-                Update
-              </button>
 
-              <button class="small-btn danger"
-                onclick="deleteAssignment('${a.id}')">
-                Delete
-              </button>
+    closeModal();
 
-            </td>
 
-          </tr>
+    await loadAllData();
 
-        `).join("")}
 
-      </tbody>
+    toast(
+      "Assignment created successfully."
+    );
 
-    </table>
-  `;
+
+  } catch (error) {
+
+    console.error(error);
+
+
+    toast(
+      getFirebaseError(error),
+      "error"
+    );
+
+  }
 }
 
-window.editAssignment = function(id) {
 
-  const a = state.assignments.find(x => x.id === id);
+// ============================================================
+// SUBMIT ASSIGNMENT
+// ============================================================
 
-  if (!a) return;
+window.submitAssignment =
+  async function(assignmentId) {
 
-  showModal("Update Assignment", `
+    const assignment =
+      state.assignments.find(
+        a =>
+          a.id ===
+          assignmentId
+      );
 
-    <form id="editAssignmentForm">
 
-      <label>Total Marks</label>
-      <input id="editAssignmentTotal"
-        type="number"
-        value="${a.totalMarks}"
-        min="0">
+    if (!assignment) return;
 
-      <label>Obtained Marks</label>
-      <input id="editAssignmentObtained"
-        type="number"
-        value="${a.obtainedMarks ?? ""}"
-        min="0">
 
-      <label>Submission Date</label>
-      <input id="editAssignmentSubmission"
-        type="date"
-        value="${a.submissionDate || ""}">
+    if (assignment.submitted) {
 
-      <div class="form-actions">
+      toast(
+        "Assignment already submitted.",
+        "error"
+      );
 
-        <button type="button"
-          class="secondary-btn"
-          onclick="closeModal()">
-          Cancel
-        </button>
+      return;
+    }
 
-        <button class="primary-btn">
-          Save
-        </button>
 
-      </div>
+    try {
 
-    </form>
-  `);
+      const now =
+        new Date();
 
-  $("editAssignmentForm").onsubmit =
-    async e => {
 
-      e.preventDefault();
+      const today =
+        formatDateLocal(
+          now
+        );
 
-      const submission =
-        $("editAssignmentSubmission").value;
+
+      let late =
+        false;
+
+
+      if (
+        assignment.deadline
+      ) {
+
+        late =
+          today >
+          assignment.deadline;
+
+      }
+
 
       await updateDoc(
-        doc(db, "assignments", id),
+        doc(
+          db,
+          "assignments",
+          assignmentId
+        ),
         {
-          totalMarks:
-            Number($("editAssignmentTotal").value),
-
-          obtainedMarks:
-            Number($("editAssignmentObtained").value || 0),
-
-          submissionDate:
-            submission || null,
 
           submitted:
-            Boolean(submission),
+            true,
+
+          submissionDate:
+            today,
 
           submittedLate:
-            submission
-              ? new Date(submission) >
-                new Date(a.deadline)
-              : false
+            late
+
         }
       );
 
-      closeModal();
 
       await loadAllData();
 
-      renderAssignments();
 
-      toast("Assignment updated.");
-    };
-};
+      toast(
+        late
+          ? "Assignment submitted late."
+          : "Assignment submitted successfully."
+      );
 
-window.deleteAssignment = async function(id) {
 
-  if (!confirm("Delete this assignment?")) return;
+    } catch (error) {
 
-  await deleteDoc(
-    doc(db, "assignments", id)
-  );
+      console.error(error);
 
-  await loadAllData();
 
-  renderAssignments();
+      toast(
+        getFirebaseError(error),
+        "error"
+      );
 
-  toast("Assignment deleted.");
-};
-
-/* =========================================================
-   STUDENT ASSIGNMENTS
-   ========================================================= */
-
-function renderMyAssignments() {
-
-  if (!state.assignments.length) {
-
-    $("myAssignmentsTable").innerHTML =
-      `<div class="empty">No assignments.</div>`;
-
-    return;
-  }
-
-  $("myAssignmentsTable").innerHTML = `
-
-    <table>
-
-      <thead>
-
-        <tr>
-          <th>Assignment</th>
-          <th>Given Date</th>
-          <th>Deadline</th>
-          <th>Marks</th>
-          <th>Status</th>
-          <th>Action</th>
-        </tr>
-
-      </thead>
-
-      <tbody>
-
-        ${state.assignments.map(a => `
-
-          <tr>
-
-            <td>
-              <strong>${escapeHTML(a.title)}</strong>
-            </td>
-
-            <td>${dateString(a.givenDate)}</td>
-
-            <td>${dateString(a.deadline)}</td>
-
-            <td>
-              ${a.obtainedMarks ?? "-"} / ${a.totalMarks}
-            </td>
-
-            <td>
-
-              ${
-                a.submitted
-                ? `<span class="status completed">Submitted</span>`
-                : `<span class="status pending">Pending</span>`
-              }
-
-            </td>
-
-            <td>
-
-              ${
-                !a.submitted
-                ? `
-                  <button class="small-btn primary"
-                    onclick="submitAssignment('${a.id}')">
-                    Submit
-                  </button>
-                `
-                : "-"
-              }
-
-            </td>
-
-          </tr>
-
-        `).join("")}
-
-      </tbody>
-
-    </table>
-  `;
-}
-
-window.submitAssignment = async function(id) {
-
-  const a =
-    state.assignments.find(x => x.id === id);
-
-  if (!a) return;
-
-  const today =
-    new Date().toISOString().slice(0, 10);
-
-  const late =
-    new Date(today) >
-    new Date(a.deadline);
-
-  await updateDoc(
-    doc(db, "assignments", id),
-    {
-      submitted: true,
-      submissionDate: today,
-      submittedLate: late
     }
-  );
+  };
 
-  await loadAllData();
 
-  renderMyAssignments();
+// ============================================================
+// DELETE ASSIGNMENT
+// ============================================================
 
-  toast(
-    late
-      ? "Assignment submitted late."
-      : "Assignment submitted on time."
-  );
-};
+window.deleteAssignment =
+  async function(assignmentId) {
 
-/* =========================================================
-   TESTS
-   ========================================================= */
+    if (
+      state.profile?.role !==
+        "admin" &&
+      state.profile?.role !==
+        "superadmin"
+    ) {
 
-$("addTestBtn").onclick = openAddTest;
+      return;
+    }
 
-function openAddTest() {
 
-  if (!state.students.length) {
+    if (
+      !confirm(
+        "Delete this assignment?"
+      )
+    ) {
 
-    toast("Create a student first.", "error");
+      return;
+    }
 
-    return;
-  }
 
-  showModal("Add Test", `
+    try {
 
-    <form id="testForm">
+      await deleteDoc(
+        doc(
+          db,
+          "assignments",
+          assignmentId
+        )
+      );
 
-      <div class="form-grid">
 
-        <div class="full">
-          <label>Student</label>
+      await loadAllData();
 
-          <select id="testStudent">
 
-            ${state.students.map(s => `
-              <option value="${s.id}">
-                ${escapeHTML(s.name)}
-              </option>
-            `).join("")}
+      toast(
+        "Assignment deleted."
+      );
 
-          </select>
-        </div>
 
-        <div>
-          <label>Test Title</label>
-          <input id="testTitle" required>
-        </div>
+    } catch (error) {
 
-        <div>
-          <label>Test Date</label>
-          <input id="testDate" type="date" required>
-        </div>
+      console.error(error);
 
-        <div>
-          <label>Total Marks</label>
-          <input id="testTotal" type="number" min="0" required>
-        </div>
 
-        <div>
-          <label>Obtained Marks</label>
-          <input id="testObtained" type="number" min="0" required>
-        </div>
+      toast(
+        getFirebaseError(error),
+        "error"
+      );
 
-      </div>
+    }
+  };
 
-      <div class="form-actions">
 
-        <button type="button"
-          class="secondary-btn"
-          onclick="closeModal()">
-          Cancel
-        </button>
+// ============================================================
+// TESTS
+// ============================================================
 
-        <button class="primary-btn">
-          Save Test
-        </button>
+function renderTests() {
 
-      </div>
+  const containers =
+    document.querySelectorAll(
+      "#testsList, #testList, [data-tests-list]"
+    );
 
-    </form>
-  `);
 
-  $("testForm").onsubmit = createTest;
+  containers.forEach(container => {
+
+    if (!state.tests.length) {
+
+      container.innerHTML =
+        `<div class="empty-state">
+          No tests found.
+        </div>`;
+
+      return;
+    }
+
+
+    container.innerHTML =
+      state.tests.map(
+        test => {
+
+          const percentage =
+            test.percentage ??
+            (
+              test.totalMarks &&
+              test.obtainedMarks !== null
+                ? Math.round(
+                    (
+                      test.obtainedMarks /
+                      test.totalMarks
+                    ) * 100
+                  )
+                : null
+            );
+
+
+          return `
+            <div class="test-card">
+
+              <h3>
+                ${escapeHtml(
+                  test.title ||
+                  "Test"
+                )}
+              </h3>
+
+              <p>
+                Date:
+                ${escapeHtml(
+                  test.date ||
+                  "-"
+                )}
+              </p>
+
+              <p>
+                Marks:
+                ${
+                  test.obtainedMarks ??
+                  "-"
+                }
+                /
+                ${
+                  test.totalMarks ??
+                  "-"
+                }
+              </p>
+
+              ${
+                percentage !== null
+                  ? `<p>
+                      Percentage:
+                      ${percentage}%
+                    </p>`
+                  : ""
+              }
+
+
+              ${
+                state.profile?.role !==
+                "student"
+                  ? `
+                    <button
+                      class="danger"
+                      onclick="window.deleteTest('${test.id}')"
+                    >
+                      Delete
+                    </button>
+                  `
+                  : ""
+              }
+
+            </div>
+          `;
+
+        }
+      ).join("");
+
+  });
 }
+
+
+// ============================================================
+// ADD TEST
+// ============================================================
+
+window.openAddTest =
+  function() {
+
+    const studentOptions =
+      state.students.map(
+        student =>
+          `
+          <option
+            value="${student.id}"
+          >
+            ${escapeHtml(
+              student.name
+            )}
+          </option>
+          `
+      ).join("");
+
+
+    showModal(
+      "Create Test Result",
+      `
+        <form id="testForm">
+
+          <div class="form-grid">
+
+            <div>
+              <label>
+                Test Title
+              </label>
+
+              <input
+                id="testTitle"
+                required
+                placeholder="Test name"
+              >
+            </div>
+
+
+            <div>
+              <label>
+                Student
+              </label>
+
+              <select
+                id="testStudent"
+                required
+              >
+                <option value="">
+                  Select Student
+                </option>
+
+                ${studentOptions}
+              </select>
+            </div>
+
+
+            <div>
+              <label>
+                Test Date
+              </label>
+
+              <input
+                id="testDate"
+                type="date"
+                required
+              >
+            </div>
+
+
+            <div>
+              <label>
+                Total Marks
+              </label>
+
+              <input
+                id="testTotalMarks"
+                type="number"
+                min="0"
+                required
+              >
+            </div>
+
+
+            <div>
+              <label>
+                Obtained Marks
+              </label>
+
+              <input
+                id="testObtainedMarks"
+                type="number"
+                min="0"
+                required
+              >
+            </div>
+
+          </div>
+
+
+          <div class="modal-actions">
+
+            <button type="submit">
+              Save Test
+            </button>
+
+            <button
+              type="button"
+              class="secondary"
+              onclick="window.closeModal()"
+            >
+              Cancel
+            </button>
+
+          </div>
+
+        </form>
+      `
+    );
+
+
+    $("testForm").onsubmit =
+      createTest;
+  };
+
+
+// ============================================================
+// CREATE TEST
+// ============================================================
 
 async function createTest(e) {
 
   e.preventDefault();
 
-  const total =
-    Number($("testTotal").value);
 
-  const obtained =
-    Number($("testObtained").value);
+  const title =
+    $("testTitle")
+      ?.value.trim();
 
-  await addDoc(collection(db, "tests"), {
+  const studentId =
+    $("testStudent")
+      ?.value;
 
-    adminId:
-      state.user.uid,
+  const date =
+    $("testDate")
+      ?.value;
 
-    studentId:
-      $("testStudent").value,
+  const totalMarks =
+    Number(
+      $("testTotalMarks")
+        ?.value
+    );
 
-    title:
-      $("testTitle").value.trim(),
+  const obtainedMarks =
+    Number(
+      $("testObtainedMarks")
+        ?.value
+    );
 
-    date:
-      $("testDate").value,
 
-    totalMarks:
-      total,
+  if (
+    !title ||
+    !studentId ||
+    !date ||
+    !Number.isFinite(totalMarks) ||
+    !Number.isFinite(obtainedMarks)
+  ) {
 
-    obtainedMarks:
-      obtained,
-
-    percentage:
-      percentage(obtained, total),
-
-    createdAt:
-      serverTimestamp()
-  });
-
-  closeModal();
-
-  await loadAllData();
-
-  renderTests();
-
-  toast("Test result saved.");
-}
-
-function renderTests() {
-
-  if (!state.tests.length) {
-
-    $("testsTable").innerHTML =
-      `<div class="empty">No tests yet.</div>`;
+    toast(
+      "Please fill all required fields.",
+      "error"
+    );
 
     return;
   }
 
-  $("testsTable").innerHTML = `
 
-    <table>
+  if (
+    obtainedMarks >
+    totalMarks
+  ) {
 
-      <thead>
-
-        <tr>
-          <th>Test</th>
-          <th>Student</th>
-          <th>Date</th>
-          <th>Marks</th>
-          <th>Percentage</th>
-          <th>Action</th>
-        </tr>
-
-      </thead>
-
-      <tbody>
-
-        ${state.tests.map(t => `
-
-          <tr>
-
-            <td>
-              <strong>${escapeHTML(t.title)}</strong>
-            </td>
-
-            <td>
-              ${escapeHTML(getStudentName(t.studentId))}
-            </td>
-
-            <td>${dateString(t.date)}</td>
-
-            <td>
-              ${t.obtainedMarks} / ${t.totalMarks}
-            </td>
-
-            <td>
-              ${t.percentage || 0}%
-            </td>
-
-            <td>
-
-              <button class="small-btn danger"
-                onclick="deleteTest('${t.id}')">
-                Delete
-              </button>
-
-            </td>
-
-          </tr>
-
-        `).join("")}
-
-      </tbody>
-
-    </table>
-  `;
-}
-
-window.deleteTest = async function(id) {
-
-  if (!confirm("Delete this test result?")) return;
-
-  await deleteDoc(
-    doc(db, "tests", id)
-  );
-
-  await loadAllData();
-
-  renderTests();
-
-  toast("Test deleted.");
-};
-
-/* =========================================================
-   STUDENT TESTS
-   ========================================================= */
-
-function renderMyTests() {
-
-  if (!state.tests.length) {
-
-    $("myTestsTable").innerHTML =
-      `<div class="empty">No test results.</div>`;
+    toast(
+      "Obtained marks cannot exceed total marks.",
+      "error"
+    );
 
     return;
   }
 
-  $("myTestsTable").innerHTML = `
 
-    <table>
+  const percentage =
+    totalMarks > 0
+      ? Math.round(
+          (
+            obtainedMarks /
+            totalMarks
+          ) * 100
+        )
+      : 0;
 
-      <thead>
 
-        <tr>
-          <th>Test</th>
-          <th>Date</th>
-          <th>Marks</th>
-          <th>Percentage</th>
-        </tr>
+  try {
 
-      </thead>
+    await addDoc(
+      collection(
+        db,
+        "tests"
+      ),
+      {
 
-      <tbody>
+        title,
 
-        ${state.tests.map(t => `
+        studentId,
 
-          <tr>
+        adminId:
+          state.user.uid,
 
-            <td>
-              <strong>${escapeHTML(t.title)}</strong>
-            </td>
+        date,
 
-            <td>${dateString(t.date)}</td>
+        totalMarks,
 
-            <td>
-              ${t.obtainedMarks} / ${t.totalMarks}
-            </td>
+        obtainedMarks,
 
-            <td>${t.percentage || 0}%</td>
+        percentage,
 
-          </tr>
+        createdAt:
+          serverTimestamp()
 
-        `).join("")}
+      }
+    );
 
-      </tbody>
 
-    </table>
-  `;
+    closeModal();
+
+
+    await loadAllData();
+
+
+    toast(
+      "Test result saved successfully."
+    );
+
+
+  } catch (error) {
+
+    console.error(error);
+
+
+    toast(
+      getFirebaseError(error),
+      "error"
+    );
+
+  }
 }
 
-/* =========================================================
-   SUPER ADMIN
-   ========================================================= */
 
-function renderAdmins() {
+// ============================================================
+// DELETE TEST
+// ============================================================
 
-  if (!state.admins.length) {
+window.deleteTest =
+  async function(testId) {
 
-    $("adminsGrid").innerHTML =
-      `<div class="empty">No admins found.</div>`;
+    if (
+      state.profile?.role !==
+        "admin" &&
+      state.profile?.role !==
+        "superadmin"
+    ) {
 
-    return;
-  }
+      return;
+    }
 
-  $("adminsGrid").innerHTML =
-    state.admins.map(admin => {
 
-      const students =
-        state.students.filter(
-          s => s.adminId === admin.id
-        );
+    if (
+      !confirm(
+        "Delete this test?"
+      )
+    ) {
 
-      const adminTasks =
-        state.tasks.filter(
-          t => t.adminId === admin.id
-        );
+      return;
+    }
 
-      const completed =
-        adminTasks.filter(
-          t => t.status === "completed"
-        ).length;
 
-      const progress =
-        percentage(
-          completed,
-          adminTasks.length
-        );
+    try {
 
-      return `
+      await deleteDoc(
+        doc(
+          db,
+          "tests",
+          testId
+        )
+      );
 
-        <div class="person-card">
 
-          <div class="person-top">
+      await loadAllData();
 
-            <div class="avatar">
-              ${getInitials(admin.name)}
-            </div>
 
-            <div>
+      toast(
+        "Test deleted."
+      );
+
+
+    } catch (error) {
+
+      console.error(error);
+
+
+      toast(
+        getFirebaseError(error),
+        "error"
+      );
+
+    }
+  };
+
+
+// ============================================================
+// PROGRESS
+// ============================================================
+
+function renderProgress() {
+
+  const containers =
+    document.querySelectorAll(
+      "#progressList, #studentProgressList, [data-progress-list]"
+    );
+
+
+  containers.forEach(container => {
+
+    if (
+      state.profile?.role ===
+      "student"
+    ) {
+
+      container.innerHTML = "";
+
+      return;
+    }
+
+
+    if (
+      state.students.length ===
+      0
+    ) {
+
+      container.innerHTML =
+        `<div class="empty-state">
+          No student progress available.
+        </div>`;
+
+      return;
+    }
+
+
+    container.innerHTML =
+      state.students.map(
+        student => {
+
+          const tasks =
+            state.tasks.filter(
+              task =>
+                task.studentId ===
+                student.id
+            );
+
+
+          const assignments =
+            state.assignments.filter(
+              assignment =>
+                assignment.studentId ===
+                student.id
+            );
+
+
+          const tests =
+            state.tests.filter(
+              test =>
+                test.studentId ===
+                student.id
+            );
+
+
+          const completedTasks =
+            tasks.filter(
+              task =>
+                task.status ===
+                "completed"
+            ).length;
+
+
+          const submittedAssignments =
+            assignments.filter(
+              assignment =>
+                assignment.submitted
+            ).length;
+
+
+          const taskProgress =
+            tasks.length
+              ? completedTasks /
+                tasks.length
+              : 0;
+
+
+          const assignmentProgress =
+            assignments.length
+              ? submittedAssignments /
+                assignments.length
+              : 0;
+
+
+          const overall =
+            Math.round(
+              (
+                taskProgress +
+                assignmentProgress
+              ) /
+              2 *
+              100
+            );
+
+
+          return `
+            <div class="progress-card">
 
               <h3>
-                ${escapeHTML(admin.name)}
+                ${escapeHtml(
+                  student.name ||
+                  "Student"
+                )}
               </h3>
 
+              <div class="progress-bar">
+
+                <span
+                  style="
+                    width:${overall}%;
+                  "
+                ></span>
+
+              </div>
+
               <p>
-                ${escapeHTML(admin.email)}
+                Overall Progress:
+                <strong>
+                  ${overall}%
+                </strong>
+              </p>
+
+              <p>
+                Tasks:
+                ${completedTasks}
+                /
+                ${tasks.length}
+              </p>
+
+              <p>
+                Assignments:
+                ${submittedAssignments}
+                /
+                ${assignments.length}
+              </p>
+
+              <p>
+                Tests:
+                ${tests.length}
               </p>
 
             </div>
+          `;
 
-          </div>
+        }
+      ).join("");
 
-          <p>
-            Students:
-            <strong>${students.length}</strong>
-          </p>
-
-          <p>
-            Tasks:
-            <strong>${adminTasks.length}</strong>
-          </p>
-
-          <div class="progress-box">
-
-            <div class="progress-label">
-              <span>Class Task Progress</span>
-              <strong>${progress}%</strong>
-            </div>
-
-            <div class="progress-track">
-              <div
-                class="progress-fill"
-                style="width:${progress}%">
-              </div>
-            </div>
-
-          </div>
-
-        </div>
-      `;
-
-    }).join("");
+  });
 }
 
-/* =========================================================
-   MODAL CLOSE
-   ========================================================= */
 
-$("closeModal").onclick = closeModal;
+// ============================================================
+// SUPER ADMIN
+// ============================================================
 
-$("modal").addEventListener("click", e => {
+function renderAdmins() {
 
-  if (e.target === $("modal")) {
-    closeModal();
+  const containers =
+    document.querySelectorAll(
+      "#adminsList, #adminList, [data-admins-list]"
+    );
+
+
+  containers.forEach(container => {
+
+    if (
+      state.profile?.role !==
+      "superadmin"
+    ) {
+
+      container.innerHTML = "";
+
+      return;
+    }
+
+
+    if (!state.admins.length) {
+
+      container.innerHTML =
+        `<div class="empty-state">
+          No Admins found.
+        </div>`;
+
+      return;
+    }
+
+
+    container.innerHTML =
+      state.admins.map(
+        admin => {
+
+          const students =
+            state.students.filter(
+              student =>
+                student.adminId ===
+                admin.id
+            );
+
+
+          const adminTasks =
+            state.tasks.filter(
+              task =>
+                task.adminId ===
+                admin.id
+            );
+
+
+          const completed =
+            adminTasks.filter(
+              task =>
+                task.status ===
+                "completed"
+            ).length;
+
+
+          const progress =
+            adminTasks.length
+              ? Math.round(
+                  completed /
+                  adminTasks.length *
+                  100
+                )
+              : 0;
+
+
+          return `
+            <div class="admin-card">
+
+              <h3>
+                ${escapeHtml(
+                  admin.name ||
+                  "Admin"
+                )}
+              </h3>
+
+              <p>
+                ${escapeHtml(
+                  admin.email ||
+                  ""
+                )}
+              </p>
+
+              <p>
+                Students:
+                ${students.length}
+              </p>
+
+              <p>
+                Task Progress:
+                ${progress}%
+              </p>
+
+              <div class="progress-bar">
+
+                <span
+                  style="
+                    width:${progress}%;
+                  "
+                ></span>
+
+              </div>
+
+            </div>
+          `;
+
+        }
+      ).join("");
+
+  });
+}
+
+
+// ============================================================
+// NAVIGATION
+// ============================================================
+
+function setupNavigation() {
+
+  document
+    .querySelectorAll(
+      "[data-page]"
+    )
+    .forEach(button => {
+
+      button.addEventListener(
+        "click",
+        () => {
+
+          const page =
+            button.dataset.page;
+
+
+          showPage(page);
+
+
+          document
+            .querySelectorAll(
+              "[data-page]"
+            )
+            .forEach(
+              item =>
+                item.classList.remove(
+                  "active"
+                )
+            );
+
+
+          button.classList.add(
+            "active"
+          );
+
+        }
+      );
+
+    });
+}
+
+
+function showPage(page) {
+
+  state.currentPage =
+    page;
+
+
+  document
+    .querySelectorAll(
+      "[data-page-section], .page-section"
+    )
+    .forEach(section => {
+
+      const sectionPage =
+        section.dataset.pageSection ||
+        section.id;
+
+
+      if (
+        sectionPage ===
+        page
+      ) {
+
+        section.style.display =
+          "";
+
+      } else {
+
+        section.style.display =
+          "none";
+      }
+
+    });
+}
+
+
+// ============================================================
+// MODAL
+// ============================================================
+
+function showModal(
+  title,
+  content
+) {
+
+  let modal =
+    $("appModal");
+
+
+  if (!modal) {
+
+    modal =
+      document.createElement(
+        "div"
+      );
+
+    modal.id =
+      "appModal";
+
+    modal.className =
+      "modal";
+
+    document.body.appendChild(
+      modal
+    );
   }
 
-});
 
-$("closeStudentModal").onclick = () => {
-  $("studentModal").classList.add("hidden");
-};
+  modal.innerHTML = `
+    <div class="modal-overlay">
 
-$("studentModal").addEventListener("click", e => {
+      <div class="modal-box">
 
-  if (e.target === $("studentModal")) {
-    $("studentModal").classList.add("hidden");
+        <div class="modal-header">
+
+          <h2>
+            ${escapeHtml(title)}
+          </h2>
+
+          <button
+            type="button"
+            class="modal-close"
+            id="modalCloseBtn"
+          >
+            ×
+          </button>
+
+        </div>
+
+        <div class="modal-body">
+
+          ${content}
+
+        </div>
+
+      </div>
+
+    </div>
+  `;
+
+
+  modal.style.display =
+    "flex";
+
+
+  $("modalCloseBtn")
+    ?.addEventListener(
+      "click",
+      closeModal
+    );
+
+
+  modal
+    .querySelector(
+      ".modal-overlay"
+    )
+    ?.addEventListener(
+      "click",
+      e => {
+
+        if (
+          e.target.classList.contains(
+            "modal-overlay"
+          )
+        ) {
+
+          closeModal();
+
+        }
+
+      }
+    );
+}
+
+
+function closeModal() {
+
+  const modal =
+    $("appModal");
+
+
+  if (modal) {
+
+    modal.style.display =
+      "none";
+
+  }
+}
+
+
+window.closeModal =
+  closeModal;
+
+
+// ============================================================
+// HELPER FUNCTIONS
+// ============================================================
+
+function setText(
+  ids,
+  value
+) {
+
+  ids.forEach(id => {
+
+    const element =
+      $(id);
+
+
+    if (element) {
+
+      element.textContent =
+        value;
+
+    }
+
+  });
+}
+
+
+function escapeHtml(value) {
+
+  if (
+    value === null ||
+    value === undefined
+  ) {
+
+    return "";
+
   }
 
-});
 
-/* =========================================================
-   INITIAL
-   ========================================================= */
+  return String(value)
+    .replaceAll(
+      "&",
+      "&amp;"
+    )
+    .replaceAll(
+      "<",
+      "&lt;"
+    )
+    .replaceAll(
+      ">",
+      "&gt;"
+    )
+    .replaceAll(
+      '"',
+      "&quot;"
+    )
+    .replaceAll(
+      "'",
+      "&#039;"
+    );
+}
 
-window.closeModal = closeModal;
+
+function formatDateLocal(
+  date
+) {
+
+  const year =
+    date.getFullYear();
+
+
+  const month =
+    String(
+      date.getMonth() + 1
+    ).padStart(
+      2,
+      "0"
+    );
+
+
+  const day =
+    String(
+      date.getDate()
+    ).padStart(
+      2,
+      "0"
+    );
+
+
+  return `${year}-${month}-${day}`;
+}
+
+
+// ============================================================
+// AUTH STATE
+// ============================================================
+
+onAuthStateChanged(
+  auth,
+  async user => {
+
+    if (!user) {
+
+      state.user =
+        null;
+
+      state.profile =
+        null;
+
+      showAuth();
+
+      return;
+    }
+
+
+    try {
+
+      const profileRef =
+        doc(
+          db,
+          "users",
+          user.uid
+        );
+
+
+      const profileSnap =
+        await getDoc(
+          profileRef
+        );
+
+
+      if (
+        !profileSnap.exists()
+      ) {
+
+        await signOut(auth);
+
+
+        toast(
+          "Your account profile is missing.",
+          "error"
+        );
+
+
+        return;
+      }
+
+
+      state.user =
+        user;
+
+
+      state.profile = {
+
+        id:
+          profileSnap.id,
+
+        ...profileSnap.data()
+
+      };
+
+
+      if (
+        state.profile.active ===
+        false
+      ) {
+
+        await signOut(auth);
+
+
+        toast(
+          "Your account has been disabled.",
+          "error"
+        );
+
+
+        return;
+      }
+
+
+      showApp();
+
+
+      await loadAllData();
+
+
+      showPage(
+        state.profile.role ===
+          "student"
+          ? "dashboard"
+          : "dashboard"
+      );
+
+
+    } catch (error) {
+
+      console.error(error);
+
+
+      toast(
+        getFirebaseError(error),
+        "error"
+      );
+
+    }
+
+  }
+);
+
+
+// ============================================================
+// GLOBAL INITIALIZATION
+// ============================================================
+
+document.addEventListener(
+  "DOMContentLoaded",
+  () => {
+
+    setupAuthTabs();
+
+    setupLogin();
+
+    setupAdminRegistration();
+
+    setupLogout();
+
+    setupNavigation();
+
+  }
+);
