@@ -1,5 +1,11 @@
-import { getApps, initializeApp, cert } from "firebase-admin/app";
+import {
+  getApps,
+  initializeApp,
+  cert
+} from "firebase-admin/app";
+
 import { getAuth } from "firebase-admin/auth";
+
 import {
   getFirestore,
   FieldValue
@@ -12,9 +18,13 @@ function getAdminApp() {
     return getApps()[0];
   }
 
-  const serviceAccount = JSON.parse(
-    process.env.FIREBASE_SERVICE_ACCOUNT_KEY
-  );
+  const rawKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+
+  if (!rawKey) {
+    throw new Error("Firebase service account is not configured.");
+  }
+
+  const serviceAccount = JSON.parse(rawKey);
 
   return initializeApp({
     credential: cert(serviceAccount)
@@ -28,7 +38,7 @@ export default async function handler(req, res) {
 
     return res.status(405).json({
       success: false,
-      message: "Method not allowed"
+      message: "Method not allowed."
     });
   }
 
@@ -42,7 +52,12 @@ export default async function handler(req, res) {
     } = req.body || {};
 
 
-    if (!name || !email || !password) {
+    const cleanName = String(name || "").trim();
+    const cleanEmail = String(email || "").trim().toLowerCase();
+    const cleanPassword = String(password || "");
+
+
+    if (!cleanName || !cleanEmail || !cleanPassword) {
 
       return res.status(400).json({
         success: false,
@@ -51,7 +66,16 @@ export default async function handler(req, res) {
     }
 
 
-    if (password.length < 6) {
+    if (cleanName.length < 2) {
+
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid name."
+      });
+    }
+
+
+    if (cleanPassword.length < 6) {
 
       return res.status(400).json({
         success: false,
@@ -66,16 +90,9 @@ export default async function handler(req, res) {
     const db = getFirestore(app);
 
 
-    const cleanName = name.trim();
-    const cleanEmail = email.trim().toLowerCase();
-
-
     const user = await adminAuth.createUser({
-
       email: cleanEmail,
-
-      password,
-
+      password: cleanPassword,
       displayName: cleanName
     });
 
@@ -111,19 +128,23 @@ export default async function handler(req, res) {
 
   } catch (error) {
 
-    console.error(error);
+    console.error("REGISTER ADMIN ERROR:", error);
+
+
+    let message = "Unable to create admin account.";
+
+    if (error.code === "auth/email-already-exists") {
+      message = "This email is already registered.";
+    }
+
+    if (error.code === "auth/invalid-email") {
+      message = "Please enter a valid email address.";
+    }
 
 
     return res.status(400).json({
-
       success: false,
-
-      message:
-        error.code === "auth/email-already-exists"
-
-          ? "This email is already registered."
-
-          : error.message
+      message
     });
   }
 }
