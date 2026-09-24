@@ -13,45 +13,47 @@
   <div id="toast"></div>
 
   <!-- ================= AUTH ================= -->
+<!-- AUTH -->
+<section id="authScreen" class="screen">
 
-  <section id="authScreen" class="screen">
+  <div class="auth-card">
 
-    <div class="auth-card">
+    <div class="brand">
 
-      <div class="brand">
+      <div class="brand-icon">✓</div>
 
-        <div class="brand-icon">✓</div>
-
-        <div>
-          <h1>Daily Task Manager</h1>
-          <p>Manage tasks, assignments and tests</p>
-        </div>
-
+      <div>
+        <h1>Daily Task Manager</h1>
+        <p>Manage tasks, assignments and tests</p>
       </div>
 
-
-      <!-- AUTH TABS -->
-
-      <div class="auth-tabs">
-
-        <button
-          id="loginTab"
-          class="auth-tab active"
-          type="button">
-          Login
-        </button>
-
-        <button
-          id="registerTab"
-          class="auth-tab"
-          type="button">
-          Admin Register
-        </button>
-
-      </div>
+    </div>
 
 
-      <!-- LOGIN -->
+    <!-- AUTH TABS -->
+
+    <div class="auth-tabs">
+
+      <button
+        id="loginTab"
+        class="auth-tab active"
+        type="button">
+        Login
+      </button>
+
+      <button
+        id="registerTab"
+        class="auth-tab"
+        type="button">
+        Admin Register
+      </button>
+
+    </div>
+
+
+    <!-- LOGIN PANEL -->
+
+    <div id="loginPanel">
 
       <form id="loginForm">
 
@@ -64,7 +66,6 @@
           required
         >
 
-
         <label>Password</label>
 
         <input
@@ -74,7 +75,6 @@
           required
         >
 
-
         <button
           class="primary-btn"
           type="submit">
@@ -83,12 +83,16 @@
 
       </form>
 
+    </div>
 
-      <!-- ADMIN REGISTER -->
 
-      <form
-        id="registerForm"
-        class="hidden">
+    <!-- ADMIN REGISTER PANEL -->
+
+    <div
+      id="registerPanel"
+      style="display:none;">
+
+      <form id="registerForm">
 
         <label>Admin Name</label>
 
@@ -140,15 +144,17 @@
 
       </form>
 
-
-      <p class="auth-note">
-        Students cannot register themselves.
-        Their accounts are created by an Admin.
-      </p>
-
     </div>
 
-  </section>
+
+    <p class="auth-note">
+      Students cannot register themselves.
+      Their accounts are created by an Admin.
+    </p>
+
+  </div>
+
+</section>
 
 
   <!-- ================= APP ================= -->
