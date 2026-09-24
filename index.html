@@ -12,255 +12,943 @@
 
   <div id="toast"></div>
 
-  <!-- AUTH -->
+  <!-- ================= AUTH ================= -->
+
   <section id="authScreen" class="screen">
+
     <div class="auth-card">
 
       <div class="brand">
+
         <div class="brand-icon">✓</div>
+
         <div>
           <h1>Daily Task Manager</h1>
           <p>Manage tasks, assignments and tests</p>
         </div>
+
       </div>
+
+
+      <!-- AUTH TABS -->
 
       <div class="auth-tabs">
-        <button id="loginTab" class="auth-tab active">Login</button>
-        <button id="registerTab" class="auth-tab">Admin Register</button>
+
+        <button
+          id="loginTab"
+          class="auth-tab active"
+          type="button">
+          Login
+        </button>
+
+        <button
+          id="registerTab"
+          class="auth-tab"
+          type="button">
+          Admin Register
+        </button>
+
       </div>
 
+
+      <!-- LOGIN -->
+
       <form id="loginForm">
+
         <label>Email</label>
-        <input id="loginEmail" type="email" placeholder="Enter email" required>
+
+        <input
+          id="loginEmail"
+          type="email"
+          placeholder="Enter email"
+          required
+        >
+
 
         <label>Password</label>
-        <input id="loginPassword" type="password" placeholder="Enter password" required>
 
-        <button class="primary-btn" type="submit">Login</button>
+        <input
+          id="loginPassword"
+          type="password"
+          placeholder="Enter password"
+          required
+        >
+
+
+        <button
+          class="primary-btn"
+          type="submit">
+          Login
+        </button>
+
       </form>
 
-      <form id="registerForm" class="hidden">
+
+      <!-- ADMIN REGISTER -->
+
+      <form
+        id="registerForm"
+        class="hidden">
+
         <label>Admin Name</label>
-        <input id="registerName" type="text" placeholder="Enter your name" required>
+
+        <input
+          id="registerName"
+          type="text"
+          placeholder="Enter your name"
+          required
+        >
+
 
         <label>Email</label>
-        <input id="registerEmail" type="email" placeholder="Enter email" required>
+
+        <input
+          id="registerEmail"
+          type="email"
+          placeholder="Enter email"
+          required
+        >
+
 
         <label>Password</label>
-        <input id="registerPassword" type="password" minlength="6" placeholder="Minimum 6 characters" required>
+
+        <input
+          id="registerPassword"
+          type="password"
+          minlength="6"
+          placeholder="Minimum 6 characters"
+          required
+        >
+
 
         <label>Confirm Password</label>
-        <input id="registerConfirm" type="password" minlength="6" placeholder="Confirm password" required>
 
-        <button class="primary-btn" type="submit">Create Admin Account</button>
+        <input
+          id="registerConfirm"
+          type="password"
+          minlength="6"
+          placeholder="Confirm password"
+          required
+        >
+
+
+        <button
+          class="primary-btn"
+          type="submit">
+          Create Admin Account
+        </button>
+
       </form>
 
+
       <p class="auth-note">
-        Students cannot register themselves. Their accounts are created by an Admin.
+        Students cannot register themselves.
+        Their accounts are created by an Admin.
       </p>
 
     </div>
+
   </section>
 
-  <!-- APP -->
-  <section id="appScreen" class="screen hidden">
+
+  <!-- ================= APP ================= -->
+
+  <section
+    id="appScreen"
+    class="screen hidden">
+
+
+    <!-- TOP BAR -->
 
     <header class="topbar">
-      <button id="menuBtn" class="icon-btn">☰</button>
+
+      <button
+        id="menuBtn"
+        class="icon-btn"
+        type="button">
+        ☰
+      </button>
+
 
       <div class="top-title">
-        <strong>Daily Task Manager</strong>
-        <span id="roleLabel">Dashboard</span>
+
+        <strong>
+          Daily Task Manager
+        </strong>
+
+        <span
+          id="roleLabel"
+          data-user-role>
+          Dashboard
+        </span>
+
       </div>
 
-      <button id="logoutBtn" class="logout-btn">Logout</button>
+
+      <button
+        id="logoutBtn"
+        class="logout-btn"
+        data-action="logout"
+        type="button">
+        Logout
+      </button>
+
     </header>
 
-    <aside id="sidebar" class="sidebar">
+
+    <!-- SIDEBAR -->
+
+    <aside
+      id="sidebar"
+      class="sidebar">
+
       <div class="side-brand">
-        <div class="brand-icon small">✓</div>
-        <div>
-          <strong>Daily Task Manager</strong>
-          <small id="sideRole">Account</small>
+
+        <div class="brand-icon small">
+          ✓
         </div>
+
+        <div>
+
+          <strong>
+            Daily Task Manager
+          </strong>
+
+          <small
+            id="sideRole"
+            data-user-role>
+            Account
+          </small>
+
+        </div>
+
       </div>
+
 
       <nav>
-        <button class="nav-item active" data-page="dashboard">🏠 Dashboard</button>
-        <button class="nav-item admin-only" data-page="students">👨‍🎓 Students</button>
-        <button class="nav-item admin-only" data-page="tasks">📝 Tasks</button>
-        <button class="nav-item admin-only" data-page="assignments">📚 Assignments</button>
-        <button class="nav-item admin-only" data-page="tests">🧪 Tests</button>
-        <button class="nav-item super-only" data-page="admins">👨‍🏫 Admins</button>
-        <button class="nav-item student-only" data-page="myTasks">📋 My Tasks</button>
-        <button class="nav-item student-only" data-page="myAssignments">📚 My Assignments</button>
-        <button class="nav-item student-only" data-page="myTests">🧪 My Tests</button>
+
+        <!-- DASHBOARD -->
+
+        <button
+          class="nav-item active"
+          data-page="dashboard"
+          type="button">
+
+          🏠 Dashboard
+
+        </button>
+
+
+        <!-- ADMIN / SUPER ADMIN -->
+
+        <button
+          class="nav-item"
+          data-role="admin,superadmin"
+          data-page="students"
+          type="button">
+
+          👨‍🎓 Students
+
+        </button>
+
+
+        <button
+          class="nav-item"
+          data-role="admin,superadmin"
+          data-page="tasks"
+          type="button">
+
+          📝 Tasks
+
+        </button>
+
+
+        <button
+          class="nav-item"
+          data-role="admin,superadmin"
+          data-page="assignments"
+          type="button">
+
+          📚 Assignments
+
+        </button>
+
+
+        <button
+          class="nav-item"
+          data-role="admin,superadmin"
+          data-page="tests"
+          type="button">
+
+          🧪 Tests
+
+        </button>
+
+
+        <!-- SUPER ADMIN -->
+
+        <button
+          class="nav-item"
+          data-role="superadmin"
+          data-page="admins"
+          type="button">
+
+          👨‍🏫 Admins
+
+        </button>
+
+
+        <!-- STUDENT -->
+
+        <button
+          class="nav-item"
+          data-role="student"
+          data-page="myTasks"
+          type="button">
+
+          📋 My Tasks
+
+        </button>
+
+
+        <button
+          class="nav-item"
+          data-role="student"
+          data-page="myAssignments"
+          type="button">
+
+          📚 My Assignments
+
+        </button>
+
+
+        <button
+          class="nav-item"
+          data-role="student"
+          data-page="myTests"
+          type="button">
+
+          🧪 My Tests
+
+        </button>
+
       </nav>
 
+
       <div class="side-bottom">
-        <button id="sideLogout" class="logout-side">Logout</button>
+
+        <button
+          id="sideLogout"
+          class="logout-side"
+          data-action="logout"
+          type="button">
+
+          Logout
+
+        </button>
+
       </div>
+
     </aside>
+
+
+    <!-- ================= MAIN ================= -->
 
     <main class="main">
 
+
       <!-- DASHBOARD -->
-      <section id="page-dashboard" class="page">
+
+      <section
+        id="page-dashboard"
+        data-page-section="dashboard"
+        class="page">
+
         <div class="page-heading">
+
           <div>
-            <h2 id="dashboardTitle">Dashboard</h2>
-            <p id="dashboardSubtitle">Welcome back.</p>
+
+            <h2 id="dashboardTitle">
+              Dashboard
+            </h2>
+
+            <p id="dashboardSubtitle">
+              Welcome back.
+            </p>
+
           </div>
+
         </div>
 
-        <div id="statsGrid" class="stats-grid"></div>
+
+        <div
+          id="statsGrid"
+          class="stats-grid">
+
+        </div>
+
 
         <div class="dashboard-grid">
-          <div class="panel">
-            <div class="panel-title">
-              <h3>Recent Activity</h3>
-            </div>
-            <div id="recentActivity" class="activity-list"></div>
-          </div>
+
+
+          <!-- RECENT ACTIVITY -->
 
           <div class="panel">
+
             <div class="panel-title">
-              <h3>Progress Overview</h3>
+
+              <h3>
+                Recent Activity
+              </h3>
+
             </div>
-            <div id="dashboardProgress"></div>
+
+            <div
+              id="recentActivity"
+              class="activity-list">
+
+            </div>
+
           </div>
+
+
+          <!-- PROGRESS -->
+
+          <div class="panel">
+
+            <div class="panel-title">
+
+              <h3>
+                Progress Overview
+              </h3>
+
+            </div>
+
+            <div
+              id="dashboardProgress">
+
+            </div>
+
+          </div>
+
         </div>
+
       </section>
+
 
       <!-- STUDENTS -->
-      <section id="page-students" class="page hidden">
+
+      <section
+        id="page-students"
+        data-page-section="students"
+        class="page hidden">
+
         <div class="page-heading">
+
           <div>
-            <h2>Students</h2>
-            <p>Manage your students and view their progress.</p>
+
+            <h2>
+              Students
+            </h2>
+
+            <p>
+              Manage your students and view their progress.
+            </p>
+
           </div>
-          <button id="addStudentBtn" class="primary-btn">+ Add Student</button>
+
+
+          <button
+            id="addStudentBtn"
+            class="primary-btn"
+            type="button"
+            onclick="window.openAddStudent()">
+
+            + Add Student
+
+          </button>
+
         </div>
+
 
         <div class="search-box">
-          <input id="studentSearch" placeholder="Search students...">
+
+          <input
+            id="studentSearch"
+            placeholder="Search students...">
+
         </div>
 
-        <div id="studentsGrid" class="cards-grid"></div>
+
+        <div
+          id="studentsList"
+          class="cards-grid">
+
+        </div>
+
       </section>
+
 
       <!-- TASKS -->
-      <section id="page-tasks" class="page hidden">
+
+      <section
+        id="page-tasks"
+        data-page-section="tasks"
+        class="page hidden">
+
         <div class="page-heading">
+
           <div>
-            <h2>Tasks</h2>
-            <p>Create and manage timed tasks.</p>
+
+            <h2>
+              Tasks
+            </h2>
+
+            <p>
+              Create and manage timed tasks.
+            </p>
+
           </div>
-          <button id="addTaskBtn" class="primary-btn">+ Add Task</button>
+
+
+          <button
+            id="addTaskBtn"
+            class="primary-btn"
+            type="button"
+            onclick="window.openAddTask()">
+
+            + Add Task
+
+          </button>
+
         </div>
 
-        <div id="tasksTable" class="table-wrap"></div>
+
+        <div
+          id="tasksList"
+          class="table-wrap">
+
+        </div>
+
       </section>
+
 
       <!-- ASSIGNMENTS -->
-      <section id="page-assignments" class="page hidden">
+
+      <section
+        id="page-assignments"
+        data-page-section="assignments"
+        class="page hidden">
+
         <div class="page-heading">
+
           <div>
-            <h2>Assignments</h2>
-            <p>Manage assignments, submissions and marks.</p>
+
+            <h2>
+              Assignments
+            </h2>
+
+            <p>
+              Manage assignments, submissions and marks.
+            </p>
+
           </div>
-          <button id="addAssignmentBtn" class="primary-btn">+ Add Assignment</button>
+
+
+          <button
+            id="addAssignmentBtn"
+            class="primary-btn"
+            type="button"
+            onclick="window.openAddAssignment()">
+
+            + Add Assignment
+
+          </button>
+
         </div>
 
-        <div id="assignmentsTable" class="table-wrap"></div>
+
+        <div
+          id="assignmentsList"
+          class="table-wrap">
+
+        </div>
+
       </section>
+
 
       <!-- TESTS -->
-      <section id="page-tests" class="page hidden">
+
+      <section
+        id="page-tests"
+        data-page-section="tests"
+        class="page hidden">
+
         <div class="page-heading">
+
           <div>
-            <h2>Tests</h2>
-            <p>Manage student tests and results.</p>
+
+            <h2>
+              Tests
+            </h2>
+
+            <p>
+              Manage student tests and results.
+            </p>
+
           </div>
-          <button id="addTestBtn" class="primary-btn">+ Add Test</button>
+
+
+          <button
+            id="addTestBtn"
+            class="primary-btn"
+            type="button"
+            onclick="window.openAddTest()">
+
+            + Add Test
+
+          </button>
+
         </div>
 
-        <div id="testsTable" class="table-wrap"></div>
+
+        <div
+          id="testsList"
+          class="table-wrap">
+
+        </div>
+
       </section>
+
 
       <!-- ADMINS -->
-      <section id="page-admins" class="page hidden">
+
+      <section
+        id="page-admins"
+        data-page-section="admins"
+        class="page hidden">
+
         <div class="page-heading">
+
           <div>
-            <h2>Admins</h2>
-            <p>All administrators and their class progress.</p>
+
+            <h2>
+              Admins
+            </h2>
+
+            <p>
+              All administrators and their class progress.
+            </p>
+
           </div>
+
         </div>
 
-        <div id="adminsGrid" class="cards-grid"></div>
+
+        <div
+          id="adminsList"
+          class="cards-grid">
+
+        </div>
+
       </section>
+
 
       <!-- MY TASKS -->
-      <section id="page-myTasks" class="page hidden">
+
+      <section
+        id="page-myTasks"
+        data-page-section="myTasks"
+        class="page hidden">
+
         <div class="page-heading">
+
           <div>
-            <h2>My Tasks</h2>
-            <p>Tasks assigned to you.</p>
+
+            <h2>
+              My Tasks
+            </h2>
+
+            <p>
+              Tasks assigned to you.
+            </p>
+
           </div>
+
         </div>
 
-        <div id="myTasksGrid" class="cards-grid"></div>
+
+        <div
+          id="myTasksGrid"
+          class="cards-grid">
+
+        </div>
+
       </section>
+
 
       <!-- MY ASSIGNMENTS -->
-      <section id="page-myAssignments" class="page hidden">
+
+      <section
+        id="page-myAssignments"
+        data-page-section="myAssignments"
+        class="page hidden">
+
         <div class="page-heading">
+
           <div>
-            <h2>My Assignments</h2>
-            <p>Your assignments and submission records.</p>
+
+            <h2>
+              My Assignments
+            </h2>
+
+            <p>
+              Your assignments and submission records.
+            </p>
+
           </div>
+
         </div>
 
-        <div id="myAssignmentsTable" class="table-wrap"></div>
+
+        <div
+          id="myAssignmentsTable"
+          class="table-wrap">
+
+        </div>
+
       </section>
 
+
       <!-- MY TESTS -->
-      <section id="page-myTests" class="page hidden">
+
+      <section
+        id="page-myTests"
+        data-page-section="myTests"
+        class="page hidden">
+
         <div class="page-heading">
+
           <div>
-            <h2>My Tests</h2>
-            <p>Your test results.</p>
+
+            <h2>
+              My Tests
+            </h2>
+
+            <p>
+              Your test results.
+            </p>
+
           </div>
+
         </div>
 
-        <div id="myTestsTable" class="table-wrap"></div>
+
+        <div
+          id="myTestsTable"
+          class="table-wrap">
+
+        </div>
+
+      </section>
+
+
+      <!-- STUDENT PROGRESS -->
+
+      <section
+        id="page-progress"
+        data-page-section="progress"
+        class="page hidden">
+
+        <div class="page-heading">
+
+          <div>
+
+            <h2>
+              Student Progress
+            </h2>
+
+            <p>
+              View student task and assignment progress.
+            </p>
+
+          </div>
+
+        </div>
+
+
+        <div
+          id="progressList"
+          class="cards-grid">
+
+        </div>
+
       </section>
 
     </main>
+
   </section>
 
-  <!-- MODAL -->
-  <div id="modal" class="modal hidden">
+
+  <!-- ================= MODAL ================= -->
+
+  <div
+    id="modal"
+    class="modal hidden">
+
     <div class="modal-card">
+
       <div class="modal-header">
-        <h3 id="modalTitle">Add</h3>
-        <button id="closeModal" class="close-btn">×</button>
+
+        <h3 id="modalTitle">
+          Add
+        </h3>
+
+        <button
+          id="closeModal"
+          class="close-btn"
+          type="button">
+
+          ×
+
+        </button>
+
       </div>
+
+
       <div id="modalBody"></div>
+
     </div>
+
   </div>
 
-  <!-- STUDENT DETAIL MODAL -->
-  <div id="studentModal" class="modal hidden">
+
+  <!-- ================= STUDENT DETAIL ================= -->
+
+  <div
+    id="studentModal"
+    class="modal hidden">
+
     <div class="modal-card large-modal">
+
       <div class="modal-header">
-        <h3 id="studentModalTitle">Student</h3>
-        <button id="closeStudentModal" class="close-btn">×</button>
+
+        <h3 id="studentModalTitle">
+          Student
+        </h3>
+
+        <button
+          id="closeStudentModal"
+          class="close-btn"
+          type="button">
+
+          ×
+
+        </button>
+
       </div>
+
+
       <div id="studentModalBody"></div>
+
     </div>
+
   </div>
 
-  <script type="module" src="script.js"></script>
+
+  <!-- ================= SCRIPT ================= -->
+
+  <script
+    type="module"
+    src="script.js">
+  </script>
+
+
+  <!-- BUTTON / MODAL SUPPORT -->
+
+  <script>
+
+    document.addEventListener("DOMContentLoaded", () => {
+
+      const closeModalButton =
+        document.getElementById("closeModal");
+
+      const modal =
+        document.getElementById("modal");
+
+      const closeStudentModalButton =
+        document.getElementById("closeStudentModal");
+
+      const studentModal =
+        document.getElementById("studentModal");
+
+
+      if (closeModalButton) {
+
+        closeModalButton.addEventListener(
+          "click",
+          () => {
+
+            modal?.classList.add("hidden");
+
+          }
+        );
+
+      }
+
+
+      if (modal) {
+
+        modal.addEventListener(
+          "click",
+          event => {
+
+            if (event.target === modal) {
+
+              modal.classList.add("hidden");
+
+            }
+
+          }
+        );
+
+      }
+
+
+      if (closeStudentModalButton) {
+
+        closeStudentModalButton.addEventListener(
+          "click",
+          () => {
+
+            studentModal?.classList.add("hidden");
+
+          }
+        );
+
+      }
+
+
+      if (studentModal) {
+
+        studentModal.addEventListener(
+          "click",
+          event => {
+
+            if (event.target === studentModal) {
+
+              studentModal.classList.add("hidden");
+
+            }
+
+          }
+        );
+
+      }
+
+    });
+
+  </script>
+
 </body>
-        </html>
+  </html>
