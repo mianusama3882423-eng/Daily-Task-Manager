@@ -1,11 +1,18 @@
 rules_version = '2';
 
 service cloud.firestore {
+
   match /databases/{database}/documents {
+
+
+    /* =====================================================
+       COMMON FUNCTIONS
+    ===================================================== */
 
     function signedIn() {
       return request.auth != null;
     }
+
 
     function userData() {
       return get(
@@ -13,94 +20,262 @@ service cloud.firestore {
       ).data;
     }
 
+
     function isSuperAdmin() {
       return signedIn()
-        && userData().role == "superadmin";
+        && userData().role == "superadmin"
+        && userData().active != false;
     }
+
 
     function isAdmin() {
       return signedIn()
-        && userData().role == "admin";
+        && userData().role == "admin"
+        && userData().active != false;
     }
+
 
     function isStudent() {
       return signedIn()
-        && userData().role == "student";
+        && userData().role == "student"
+        && userData().active != false;
     }
+
+
+    function studentBelongsToAdmin(studentId) {
+      return exists(
+        /databases/$(database)/documents/users/$(studentId)
+      )
+      &&
+      get(
+        /databases/$(database)/documents/users/$(studentId)
+      ).data.role == "student"
+      &&
+      get(
+        /databases/$(database)/documents/users/$(studentId)
+      ).data.adminId == request.auth.uid;
+    }
+
+
+    /* =====================================================
+       USERS
+    ===================================================== */
 
     match /users/{userId} {
 
-      allow read, write: if isSuperAdmin();
+      /*
+        Super Admin has full user management.
+      */
 
-      allow read: if signedIn()
+      allow read, write:
+        if isSuperAdmin();
+
+
+      /*
+        Every signed-in user can read
+        his own profile.
+      */
+
+      allow read:
+        if signedIn()
         && request.auth.uid == userId;
 
-      allow read: if isAdmin()
+
+      /*
+        Admin can read only his students.
+      */
+
+      allow read:
+        if isAdmin()
         && resource.data.role == "student"
         && resource.data.adminId == request.auth.uid;
 
-      allow create: if false;
 
-      allow update, delete: if isSuperAdmin();
+      /*
+        Client-side creation is disabled.
+        Student/Admin creation is done
+        securely through Vercel API.
+      */
+
+      allow create:
+        if false;
+
+
+      /*
+        Normal users cannot update/delete
+        profiles from client.
+      */
+
+      allow update, delete:
+        if isSuperAdmin();
     }
+
+
+    /* =====================================================
+       TASKS
+    ===================================================== */
 
     match /tasks/{taskId} {
 
-      allow read, write: if isSuperAdmin();
+      allow read, write:
+        if isSuperAdmin();
 
-      allow read: if isAdmin()
+
+      /*
+        Admin can read his own tasks.
+      */
+
+      allow read:
+        if isAdmin()
         && resource.data.adminId == request.auth.uid;
 
-      allow create: if isAdmin()
-        && request.resource.data.adminId == request.auth.uid;
 
-      allow update: if isAdmin()
+      /*
+        Admin can create task only for
+        a student belonging to that admin.
+      */
+
+      allow create:
+        if isAdmin()
+        && request.resource.data.adminId == request.auth.uid
+        && studentBelongsToAdmin(
+          request.resource.data.studentId
+        );
+
+
+      /*
+        Admin can update only his own task
+        and cannot move it to another admin
+        or another admin's student.
+      */
+
+      allow update:
+        if isAdmin()
         && resource.data.adminId == request.auth.uid
-        && request.resource.data.adminId == request.auth.uid;
+        && request.resource.data.adminId == request.auth.uid
+        && studentBelongsToAdmin(
+          request.resource.data.studentId
+        );
 
-      allow delete: if isAdmin()
+
+      allow delete:
+        if isAdmin()
         && resource.data.adminId == request.auth.uid;
 
-      allow read: if isStudent()
+
+      /*
+        Student can read only own tasks.
+      */
+
+      allow read:
+        if isStudent()
         && resource.data.studentId == request.auth.uid;
 
-      allow update: if isStudent()
+
+      /*
+        Student task workflow:
+
+        pending -> accepted
+        accepted -> completed
+      */
+
+      allow update:
+        if isStudent()
         && resource.data.studentId == request.auth.uid
         && request.resource.data.studentId == request.auth.uid
-        && request.resource.data.diff(resource.data)
-          .affectedKeys()
-          .hasOnly([
-            "status",
-            "acceptedAt",
-            "completedAt",
-            "completionSeconds",
-            "updatedAt"
-          ]);
+        && (
+
+          (
+            resource.data.status == "pending"
+            &&
+            request.resource.data.status == "accepted"
+            &&
+            request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                "status",
+                "acceptedAt",
+                "updatedAt"
+              ])
+          )
+
+          ||
+
+          (
+            resource.data.status == "accepted"
+            &&
+            request.resource.data.status == "completed"
+            &&
+            request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                "status",
+                "completedAt",
+                "completionSeconds",
+                "updatedAt"
+              ])
+          )
+
+        );
     }
+
+
+    /* =====================================================
+       ASSIGNMENTS
+    ===================================================== */
 
     match /assignments/{assignmentId} {
 
-      allow read, write: if isSuperAdmin();
+      allow read, write:
+        if isSuperAdmin();
 
-      allow read: if isAdmin()
+
+      allow read:
+        if isAdmin()
         && resource.data.adminId == request.auth.uid;
 
-      allow create: if isAdmin()
-        && request.resource.data.adminId == request.auth.uid;
 
-      allow update: if isAdmin()
+      allow create:
+        if isAdmin()
+        && request.resource.data.adminId == request.auth.uid
+        && studentBelongsToAdmin(
+          request.resource.data.studentId
+        );
+
+
+      allow update:
+        if isAdmin()
         && resource.data.adminId == request.auth.uid
-        && request.resource.data.adminId == request.auth.uid;
+        && request.resource.data.adminId == request.auth.uid
+        && studentBelongsToAdmin(
+          request.resource.data.studentId
+        );
 
-      allow delete: if isAdmin()
+
+      allow delete:
+        if isAdmin()
         && resource.data.adminId == request.auth.uid;
 
-      allow read: if isStudent()
+
+      /*
+        Student can read only own assignments.
+      */
+
+      allow read:
+        if isStudent()
         && resource.data.studentId == request.auth.uid;
 
-      allow update: if isStudent()
+
+      /*
+        Student may submit once.
+      */
+
+      allow update:
+        if isStudent()
         && resource.data.studentId == request.auth.uid
         && request.resource.data.studentId == request.auth.uid
+        && resource.data.submitted == false
+        && request.resource.data.submitted == true
         && request.resource.data.diff(resource.data)
           .affectedKeys()
           .hasOnly([
@@ -110,24 +285,50 @@ service cloud.firestore {
           ]);
     }
 
+
+    /* =====================================================
+       TESTS
+    ===================================================== */
+
     match /tests/{testId} {
 
-      allow read, write: if isSuperAdmin();
+      allow read, write:
+        if isSuperAdmin();
 
-      allow read: if isAdmin()
+
+      allow read:
+        if isAdmin()
         && resource.data.adminId == request.auth.uid;
 
-      allow create: if isAdmin()
-        && request.resource.data.adminId == request.auth.uid;
 
-      allow update: if isAdmin()
+      allow create:
+        if isAdmin()
+        && request.resource.data.adminId == request.auth.uid
+        && studentBelongsToAdmin(
+          request.resource.data.studentId
+        );
+
+
+      allow update:
+        if isAdmin()
         && resource.data.adminId == request.auth.uid
-        && request.resource.data.adminId == request.auth.uid;
+        && request.resource.data.adminId == request.auth.uid
+        && studentBelongsToAdmin(
+          request.resource.data.studentId
+        );
 
-      allow delete: if isAdmin()
+
+      allow delete:
+        if isAdmin()
         && resource.data.adminId == request.auth.uid;
 
-      allow read: if isStudent()
+
+      /*
+        Student can only view own tests.
+      */
+
+      allow read:
+        if isStudent()
         && resource.data.studentId == request.auth.uid;
     }
   }
