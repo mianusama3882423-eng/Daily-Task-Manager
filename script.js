@@ -191,43 +191,38 @@ function getFirebaseError(error) {
 
 function showAuth() {
 
-  const authScreen =
-    $("authScreen");
-
-  const appScreen =
-    $("appScreen");
-
+  const authScreen = $("authScreen");
+  const appScreen = $("appScreen");
 
   if (authScreen) {
-    authScreen.style.display = "block";
+    authScreen.classList.remove("hidden");
+    authScreen.style.display = "";
   }
-
 
   if (appScreen) {
+    appScreen.classList.add("hidden");
     appScreen.style.display = "none";
   }
+
 }
 
 
 function showApp() {
 
-  const authScreen =
-    $("authScreen");
-
-  const appScreen =
-    $("appScreen");
-
+  const authScreen = $("authScreen");
+  const appScreen = $("appScreen");
 
   if (authScreen) {
+    authScreen.classList.add("hidden");
     authScreen.style.display = "none";
   }
 
-
   if (appScreen) {
-    appScreen.style.display = "block";
+    appScreen.classList.remove("hidden");
+    appScreen.style.display = "";
   }
-}
 
+}
 
 // ============================================================
 // AUTH TABS
@@ -3591,38 +3586,42 @@ function setupNavigation() {
 
 function showPage(page) {
 
-  state.currentPage =
-    page;
-
+  state.currentPage = page;
 
   document
-    .querySelectorAll(
-      "[data-page-section], .page-section"
-    )
+    .querySelectorAll("[data-page-section], .page")
     .forEach(section => {
 
       const sectionPage =
         section.dataset.pageSection ||
-        section.id;
+        section.id.replace("page-", "");
 
+      if (sectionPage === page) {
 
-      if (
-        sectionPage ===
-        page
-      ) {
-
-        section.style.display =
-          "";
+        section.classList.remove("hidden");
+        section.style.display = "";
 
       } else {
 
-        section.style.display =
-          "none";
+        section.classList.add("hidden");
+        section.style.display = "none";
+
       }
 
     });
-}
 
+  document
+    .querySelectorAll("[data-page]")
+    .forEach(item => {
+
+      item.classList.toggle(
+        "active",
+        item.dataset.page === page
+      );
+
+    });
+
+}
 
 // ============================================================
 // MODAL
