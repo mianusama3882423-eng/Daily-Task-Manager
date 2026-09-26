@@ -4,11 +4,9 @@ import {
 
 import {
   getAuth,
-  createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
-  onAuthStateChanged,
-  updateProfile
+  onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 
 import {
@@ -25,15 +23,23 @@ import {
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
+import {
+  getStorage,
+  ref,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
+
 
 /* =========================================================
    CONFIG
 ========================================================= */
 
-const VERSION = "v2.1.0";
+const VERSION = "v2.2.0";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBHerMjZdE-OTlqtdsZ35k3V15SEyHzuVc",
+  apiKey: "AIzaSyBHerMjZdE-OTlqtdzS35k3V15SEHzuVc",
   authDomain: "daily-task-manager-6c31b.firebaseapp.com",
   projectId: "daily-task-manager-6c31b",
   storageBucket: "daily-task-manager-6c31b.firebasestorage.app",
@@ -42,8 +48,25 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
+
 const auth = getAuth(app);
+
 const db = getFirestore(app);
+
+const storage = getStorage(app);
+
+
+/* =========================================================
+   CONSTANTS
+========================================================= */
+
+const MB = 1024 * 1024;
+
+const DEFAULT_STORAGE_MB = 500;
+
+const STORAGE_WARNING = 80;
+
+const STORAGE_DANGER = 90;
 
 
 /* =========================================================
@@ -51,16 +74,30 @@ const db = getFirestore(app);
 ========================================================= */
 
 const state = {
+
   user: null,
+
   profile: null,
 
   students: [],
+
   admins: [],
+
   tasks: [],
+
   assignments: [],
+
   tests: [],
 
+  files: [],
+
+  storageUsage: {
+    usedBytes: 0,
+    allocatedBytes: DEFAULT_STORAGE_MB * MB
+  },
+
   currentPage: "dashboard",
+
   unsubscribe: null
 };
 
@@ -72,12 +109,14 @@ const state = {
 const $ = id => document.getElementById(id);
 
 const esc = value => {
+
   return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+
 };
 
 function clean(value) {
@@ -85,7 +124,11 @@ function clean(value) {
 }
 
 function initials(name) {
-  const parts = clean(name).split(/\s+/).filter(Boolean);
+
+  const parts =
+    clean(name)
+      .split(/\s+/)
+      .filter(Boolean);
 
   if (!parts.length) return "U";
 
@@ -97,63 +140,145 @@ function initials(name) {
 }
 
 function formatDate(value) {
+
   if (!value) return "—";
 
-  const date = value?.toDate
-    ? value.toDate()
-    : new Date(value);
+  const date =
+    value?.toDate
+      ? value.toDate()
+      : new Date(value);
 
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
 
   return date.toLocaleDateString();
 }
 
 function formatDateTime(value) {
+
   if (!value) return "—";
 
-  const date = value?.toDate
-    ? value.toDate()
-    : new Date(value);
+  const date =
+    value?.toDate
+      ? value.toDate()
+      : new Date(value);
 
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
 
   return date.toLocaleString();
 }
 
-function dateInputValue(value) {
-  if (!value) return "";
-
-  const date = value?.toDate
-    ? value.toDate()
-    : new Date(value);
-
-  if (Number.isNaN(date.getTime())) return "";
-
-  return date.toISOString().slice(0, 10);
-}
-
 function getTime(value) {
+
   if (!value) return 0;
 
-  const date = value?.toDate
-    ? value.toDate()
-    : new Date(value);
+  const date =
+    value?.toDate
+      ? value.toDate()
+      : new Date(value);
 
   return Number.isNaN(date.getTime())
     ? 0
     : date.getTime();
 }
 
+function formatBytes(bytes) {
+
+  const value = Number(bytes || 0);
+
+  if (value <= 0) return "0 B";
+
+  const units = [
+    "B",
+    "KB",
+    "MB",
+    "GB",
+    "TB"
+  ];
+
+  const index =
+    Math.floor(
+      Math.log(value) /
+      Math.log(1024)
+    );
+
+  return (
+    (value /
+      Math.pow(1024, index))
+      .toFixed(index === 0 ? 0 : 2)
+      .replace(/\.00$/, "")
+    + " "
+    + units[index]
+  );
+}
+
+function storageAllocationBytes(profile) {
+
+  const mb =
+    Number(
+      profile?.storageAllocationMB ||
+      DEFAULT_STORAGE_MB
+    );
+
+  return mb * MB;
+}
+
+function storagePercent(used, allocated) {
+
+  if (!allocated) return 0;
+
+  return Math.min(
+    100,
+    Math.round(
+      (used / allocated) * 100
+    )
+  );
+}
+
+function storageStatus(percent) {
+
+  if (percent >= 100) {
+    return {
+      label: "Storage Full",
+      cls: "danger"
+    };
+  }
+
+  if (percent >= STORAGE_DANGER) {
+    return {
+      label: "Almost Full",
+      cls: "danger"
+    };
+  }
+
+  if (percent >= STORAGE_WARNING) {
+    return {
+      label: "Storage Warning",
+      cls: "warning"
+    };
+  }
+
+  return {
+    label: "Normal",
+    cls: "success"
+  };
+}
+
 function statusBadge(status) {
 
-  const s = clean(status).toLowerCase();
+  const s =
+    clean(status).toLowerCase();
 
   let cls = "";
 
   if (
     s === "completed" ||
     s === "submitted" ||
-    s === "active"
+    s === "active" ||
+    s === "normal"
   ) {
     cls = "success";
   }
@@ -167,12 +292,19 @@ function statusBadge(status) {
 
   if (
     s === "late" ||
-    s === "inactive"
+    s === "inactive" ||
+    s === "warning" ||
+    s === "almost full" ||
+    s === "storage full"
   ) {
     cls = "danger";
   }
 
-  return `<span class="badge ${cls}">${esc(status || "Unknown")}</span>`;
+  return `
+    <span class="badge ${cls}">
+      ${esc(status || "Unknown")}
+    </span>
+  `;
 }
 
 function showToast(message, type = "success") {
@@ -182,43 +314,63 @@ function showToast(message, type = "success") {
   if (!toast) return;
 
   toast.textContent = message;
-  toast.className = `toast show ${type}`;
+
+  toast.className =
+    `toast show ${type}`;
 
   clearTimeout(showToast.timer);
 
-  showToast.timer = setTimeout(() => {
-    toast.className = "toast";
-  }, 3200);
+  showToast.timer =
+    setTimeout(() => {
+      toast.className = "toast";
+    }, 3500);
 }
 
-function setFormMessage(id, message, error = false) {
+function setFormMessage(
+  id,
+  message,
+  error = false
+) {
 
   const el = $(id);
 
   if (!el) return;
 
   el.textContent = message;
-  el.style.color = error
-    ? "var(--danger)"
-    : "var(--success)";
+
+  el.style.color =
+    error
+      ? "var(--danger)"
+      : "var(--success)";
 }
 
-function setBusy(button, busy, busyText = "Please wait...") {
+function setBusy(
+  button,
+  busy,
+  busyText = "Please wait..."
+) {
 
   if (!button) return;
 
   if (busy) {
+
     if (!button.dataset.originalText) {
-      button.dataset.originalText = button.textContent;
+      button.dataset.originalText =
+        button.textContent;
     }
 
     button.disabled = true;
-    button.textContent = busyText;
+
+    button.textContent =
+      busyText;
+
   } else {
+
     button.disabled = false;
 
     if (button.dataset.originalText) {
-      button.textContent = button.dataset.originalText;
+      button.textContent =
+        button.dataset.originalText;
     }
   }
 }
@@ -246,105 +398,131 @@ function isStudent() {
 
 function showAuth() {
 
-  $("authScreen")?.classList.remove("hidden");
-  $("appScreen")?.classList.add("hidden");
+  $("authScreen")
+    ?.classList.remove("hidden");
+
+  $("appScreen")
+    ?.classList.add("hidden");
 }
 
 function showApp() {
 
-  $("authScreen")?.classList.add("hidden");
-  $("appScreen")?.classList.remove("hidden");
+  $("authScreen")
+    ?.classList.add("hidden");
+
+  $("appScreen")
+    ?.classList.remove("hidden");
 }
 
 function switchAuthTab(type) {
 
-  const login = type === "login";
+  const login =
+    type === "login";
 
-  $("loginTab")?.classList.toggle("active", login);
-  $("registerTab")?.classList.toggle("active", !login);
+  $("loginTab")
+    ?.classList.toggle(
+      "active",
+      login
+    );
 
-  $("loginPanel")?.classList.toggle("hidden", !login);
-  $("registerPanel")?.classList.toggle("hidden", login);
+  $("registerTab")
+    ?.classList.toggle(
+      "active",
+      !login
+    );
+
+  $("loginPanel")
+    ?.classList.toggle(
+      "hidden",
+      !login
+    );
+
+  $("registerPanel")
+    ?.classList.toggle(
+      "hidden",
+      login
+    );
 }
 
 
 /* =========================================================
-   AUTH
+   PASSWORD EYE
 ========================================================= */
 
-async function loginUser(event) {
+function setupPasswordEyes() {
 
-  event.preventDefault();
+  document
+    .querySelectorAll(
+      "[data-password-target]"
+    )
+    .forEach(button => {
 
-  const email = clean($("loginEmail")?.value).toLowerCase();
-  const password = $("loginPassword")?.value || "";
+      button.addEventListener(
+        "click",
+        () => {
 
-  setFormMessage("loginMessage", "");
+          const target =
+            $(button.dataset.passwordTarget);
 
-  if (!email || !password) {
-    setFormMessage(
-      "loginMessage",
-      "Please enter email and password.",
-      true
-    );
-    return;
-  }
+          if (!target) return;
 
-  const button = event.submitter;
+          if (target.type === "password") {
 
-  try {
+            target.type = "text";
 
-    setBusy(button, true, "Logging in...");
+            button.textContent = "🙈";
 
-    await signInWithEmailAndPassword(
-      auth,
-      email,
-      password
-    );
+          } else {
 
-  } catch (error) {
+            target.type = "password";
 
-    console.error(error);
+            button.textContent = "👁️";
+          }
 
-    let message = "Unable to login.";
+        }
+      );
 
-    if (
-      error.code === "auth/invalid-credential" ||
-      error.code === "auth/wrong-password" ||
-      error.code === "auth/user-not-found"
-    ) {
-      message = "Invalid email or password.";
-    }
-
-    if (error.code === "auth/too-many-requests") {
-      message = "Too many attempts. Please try again later.";
-    }
-
-    setFormMessage(
-      "loginMessage",
-      message,
-      true
-    );
-
-  } finally {
-
-    setBusy(button, false);
-  }
+    });
 }
 
+
+/* =========================================================
+   OTP REGISTRATION
+========================================================= */
+
+let otpSent = false;
 
 async function registerAdmin(event) {
 
   event.preventDefault();
 
-  const name = clean($("registerName")?.value);
-  const email = clean($("registerEmail")?.value).toLowerCase();
-  const password = $("registerPassword")?.value || "";
-  const confirm = $("registerConfirm")?.value || "";
+  const name =
+    clean($("registerName")?.value);
 
-  setFormMessage("registerMessage", "");
+  const email =
+    clean($("registerEmail")?.value)
+      .toLowerCase();
 
-  if (!name || !email || !password || !confirm) {
+  const password =
+    $("registerPassword")?.value || "";
+
+  const confirm =
+    $("registerConfirm")?.value || "";
+
+  const code =
+    clean($("registerOTP")?.value);
+
+  setFormMessage(
+    "registerMessage",
+    ""
+  );
+
+  if (
+    !name ||
+    !email ||
+    !password ||
+    !confirm
+  ) {
 
     setFormMessage(
       "registerMessage",
@@ -377,48 +555,99 @@ async function registerAdmin(event) {
     return;
   }
 
-  const button = event.submitter;
+  if (!otpSent) {
 
-  try {
-
-    setBusy(button, true, "Creating...");
-
-    const response = await fetch(
-      "/api/register-admin",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          name,
-          email,
-          password
-        })
-      }
+    await sendRegistrationCode(
+      name,
+      email,
+      password,
+      event.submitter
     );
 
-    const data = await response.json();
+    return;
+  }
 
-    if (!response.ok || !data.success) {
-      throw new Error(
-        data.message || "Unable to create admin account."
-      );
-    }
+  if (!/^\d{6}$/.test(code)) {
 
     setFormMessage(
       "registerMessage",
+      "Enter the 6-digit verification code.",
+      true
+    );
+
+    return;
+  }
+
+  const button =
+    event.submitter;
+
+  try {
+
+    setBusy(
+      button,
+      true,
+      "Verifying..."
+    );
+
+    const response =
+      await fetch(
+        "/api/register-admin",
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json"
+          },
+
+          body: JSON.stringify({
+            action: "verify-code",
+            email,
+            code
+          })
+        }
+      );
+
+    const data =
+      await response.json();
+
+    if (
+      !response.ok ||
+      !data.success
+    ) {
+      throw new Error(
+        data.message ||
+        "Unable to verify email."
+      );
+    }
+
+    showToast(
       "Admin account created successfully."
     );
 
-    $("registerPanel")?.reset();
+    otpSent = false;
+
+    $("emailVerificationBox")
+      ?.classList.add("hidden");
+
+    $("registerForm")
+      ?.reset();
+
+    setFormMessage(
+      "registerMessage",
+      "Email verified. Your account has been created."
+    );
 
     setTimeout(() => {
+
       switchAuthTab("login");
+
       if ($("loginEmail")) {
-        $("loginEmail").value = email;
+        $("loginEmail").value =
+          email;
       }
-    }, 800);
+
+    }, 1000);
 
   } catch (error) {
 
@@ -426,22 +655,228 @@ async function registerAdmin(event) {
 
     setFormMessage(
       "registerMessage",
-      error.message || "Unable to create account.",
+      error.message ||
+      "Unable to verify email.",
       true
     );
 
   } finally {
 
-    setBusy(button, false);
+    setBusy(
+      button,
+      false
+    );
   }
 }
 
+async function sendRegistrationCode(
+  name,
+  email,
+  password,
+  button
+) {
+
+  try {
+
+    setBusy(
+      button,
+      true,
+      "Sending Code..."
+    );
+
+    const response =
+      await fetch(
+        "/api/register-admin",
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json"
+          },
+
+          body: JSON.stringify({
+            action: "send-code",
+            name,
+            email,
+            password
+          })
+        }
+      );
+
+    const data =
+      await response.json();
+
+    if (
+      !response.ok ||
+      !data.success
+    ) {
+      throw new Error(
+        data.message ||
+        "Unable to send verification code."
+      );
+    }
+
+    otpSent = true;
+
+    $("emailVerificationBox")
+      ?.classList.remove("hidden");
+
+    if ($("sendOTPBtn")) {
+      $("sendOTPBtn").textContent =
+        "Verify & Create Account";
+    }
+
+    setFormMessage(
+      "registerMessage",
+      "Verification code sent to your email."
+    );
+
+  } catch (error) {
+
+    console.error(error);
+
+    setFormMessage(
+      "registerMessage",
+      error.message ||
+      "Unable to send verification code.",
+      true
+    );
+
+  } finally {
+
+    setBusy(
+      button,
+      false
+    );
+  }
+}
+
+async function resendOTP() {
+
+  const name =
+    clean($("registerName")?.value);
+
+  const email =
+    clean($("registerEmail")?.value)
+      .toLowerCase();
+
+  const password =
+    $("registerPassword")?.value || "";
+
+  if (!name || !email || !password) {
+
+    setFormMessage(
+      "registerMessage",
+      "Fill your registration details first.",
+      true
+    );
+
+    return;
+  }
+
+  await sendRegistrationCode(
+    name,
+    email,
+    password,
+    $("resendOTPBtn")
+  );
+}
+
+
+/* =========================================================
+   LOGIN
+========================================================= */
+
+async function loginUser(event) {
+
+  event.preventDefault();
+
+  const email =
+    clean($("loginEmail")?.value)
+      .toLowerCase();
+
+  const password =
+    $("loginPassword")?.value || "";
+
+  if (!email || !password) {
+
+    setFormMessage(
+      "loginMessage",
+      "Please enter email and password.",
+      true
+    );
+
+    return;
+  }
+
+  const button =
+    event.submitter;
+
+  try {
+
+    setBusy(
+      button,
+      true,
+      "Logging in..."
+    );
+
+    await signInWithEmailAndPassword(
+      auth,
+      email,
+      password
+    );
+
+  } catch (error) {
+
+    console.error(error);
+
+    let message =
+      "Unable to login.";
+
+    if (
+      error.code ===
+        "auth/invalid-credential" ||
+      error.code ===
+        "auth/wrong-password" ||
+      error.code ===
+        "auth/user-not-found"
+    ) {
+      message =
+        "Invalid email or password.";
+    }
+
+    if (
+      error.code ===
+      "auth/too-many-requests"
+    ) {
+      message =
+        "Too many attempts. Please try again later.";
+    }
+
+    setFormMessage(
+      "loginMessage",
+      message,
+      true
+    );
+
+  } finally {
+
+    setBusy(
+      button,
+      false
+    );
+  }
+}
 
 async function logoutUser() {
 
   try {
+
     await signOut(auth);
+
   } catch (error) {
+
     console.error(error);
   }
 }
@@ -453,21 +888,548 @@ async function logoutUser() {
 
 async function loadProfile(uid) {
 
-  const snap = await getDoc(
-    doc(db, "users", uid)
-  );
+  const snap =
+    await getDoc(
+      doc(db, "users", uid)
+    );
 
   if (!snap.exists()) {
-    throw new Error("Your user profile was not found.");
+    throw new Error(
+      "Your user profile was not found."
+    );
   }
 
-  const data = snap.data();
+  const data =
+    snap.data();
 
   if (data.active === false) {
-    throw new Error("Your account is inactive.");
+    throw new Error(
+      "Your account is inactive."
+    );
   }
 
   return data;
+}
+
+
+/* =========================================================
+   STORAGE
+========================================================= */
+
+async function loadStorageData() {
+
+  state.files = [];
+
+  if (!isAdmin()) {
+
+    if (isSuperAdmin()) {
+      await loadAdminStorageData();
+    }
+
+    return;
+  }
+
+  const filesSnap =
+    await getDocs(
+      query(
+        collection(db, "files"),
+        where(
+          "adminId",
+          "==",
+          state.user.uid
+        )
+      )
+    );
+
+  state.files =
+    filesSnap.docs.map(d => ({
+      id: d.id,
+      ...d.data()
+    }));
+
+  const usedBytes =
+    state.files.reduce(
+      (sum, file) =>
+        sum + Number(file.size || 0),
+      0
+    );
+
+  state.storageUsage = {
+
+    usedBytes,
+
+    allocatedBytes:
+      storageAllocationBytes(
+        state.profile
+      )
+
+  };
+}
+
+async function loadAdminStorageData() {
+
+  for (
+    const admin of state.admins
+  ) {
+
+    const filesSnap =
+      await getDocs(
+        query(
+          collection(db, "files"),
+          where(
+            "adminId",
+            "==",
+            admin.id
+          )
+        )
+      );
+
+    const files =
+      filesSnap.docs.map(
+        d => ({
+          id: d.id,
+          ...d.data()
+        })
+      );
+
+    admin._storageUsedBytes =
+      files.reduce(
+        (sum, file) =>
+          sum + Number(file.size || 0),
+        0
+      );
+
+    admin._storageAllocatedBytes =
+      storageAllocationBytes(
+        admin
+      );
+  }
+}
+
+function renderStorageCard() {
+
+  if (!isAdmin()) {
+    return "";
+  }
+
+  const used =
+    state.storageUsage.usedBytes;
+
+  const allocated =
+    state.storageUsage.allocatedBytes;
+
+  const remaining =
+    Math.max(
+      0,
+      allocated - used
+    );
+
+  const percent =
+    storagePercent(
+      used,
+      allocated
+    );
+
+  const status =
+    storageStatus(percent);
+
+  let warning = "";
+
+  if (percent >= 100) {
+
+    warning = `
+      <div class="storage-warning danger">
+        Storage is full. New file uploads are blocked.
+        Delete old files to free space.
+      </div>
+    `;
+
+  } else if (percent >= 90) {
+
+    warning = `
+      <div class="storage-warning danger">
+        Your storage is almost full.
+        Only ${formatBytes(remaining)} remains.
+      </div>
+    `;
+
+  } else if (percent >= 80) {
+
+    warning = `
+      <div class="storage-warning warning">
+        Storage usage is above 80%.
+        ${formatBytes(remaining)} remains.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="storage-card">
+
+      <div class="storage-header">
+
+        <div>
+          <h3>My Storage</h3>
+          <p>File storage usage</p>
+        </div>
+
+        ${statusBadge(status.label)}
+
+      </div>
+
+      <div class="storage-numbers">
+
+        <div>
+          <strong>${formatBytes(allocated)}</strong>
+          <small>Allocated</small>
+        </div>
+
+        <div>
+          <strong>${formatBytes(used)}</strong>
+          <small>Used</small>
+        </div>
+
+        <div>
+          <strong>${formatBytes(remaining)}</strong>
+          <small>Remaining</small>
+        </div>
+
+        <div>
+          <strong>${percent}%</strong>
+          <small>Used</small>
+        </div>
+
+      </div>
+
+      <div class="progress-track storage-track">
+
+        <div
+          class="progress-fill"
+          style="width:${percent}%"
+        ></div>
+
+      </div>
+
+      ${warning}
+
+    </div>
+  `;
+}
+
+function renderFilesPage() {
+
+  if (!isAdmin()) return;
+
+  const container =
+    $("filesList");
+
+  if (!container) return;
+
+  if (!state.files.length) {
+
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">📁</div>
+        No files uploaded yet.
+      </div>
+    `;
+
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="file-grid">
+
+      ${state.files
+        .sort(
+          (a,b) =>
+            getTime(b.createdAt) -
+            getTime(a.createdAt)
+        )
+        .map(file => {
+
+          return `
+            <div class="file-card">
+
+              <div class="file-icon">
+                📄
+              </div>
+
+              <div class="file-info">
+
+                <strong>
+                  ${esc(file.name)}
+                </strong>
+
+                <small>
+                  ${formatBytes(file.size)}
+                </small>
+
+                <small>
+                  ${formatDateTime(file.createdAt)}
+                </small>
+
+              </div>
+
+              <div class="file-actions">
+
+                ${
+                  file.url
+                    ? `
+                      <a
+                        href="${esc(file.url)}"
+                        target="_blank"
+                        rel="noopener"
+                        class="secondary-btn"
+                      >
+                        Open
+                      </a>
+                    `
+                    : ""
+                }
+
+                <button
+                  class="danger-btn"
+                  data-delete-file="${file.id}"
+                >
+                  Delete
+                </button>
+
+              </div>
+
+            </div>
+          `;
+
+        }).join("")}
+
+    </div>
+  `;
+
+  container
+    .querySelectorAll(
+      "[data-delete-file]"
+    )
+    .forEach(button => {
+
+      button.onclick =
+        () =>
+          deleteStorageFile(
+            button.dataset.deleteFile
+          );
+
+    });
+}
+
+async function uploadStorageFile() {
+
+  const input =
+    $("storageFileInput");
+
+  const button =
+    $("uploadFileBtn");
+
+  const file =
+    input?.files?.[0];
+
+  if (!file) {
+
+    showToast(
+      "Please select a file.",
+      "error"
+    );
+
+    return;
+  }
+
+  await loadStorageData();
+
+  const used =
+    state.storageUsage.usedBytes;
+
+  const allocated =
+    state.storageUsage.allocatedBytes;
+
+  if (
+    used >= allocated
+  ) {
+
+    showToast(
+      "Storage is full. Delete old files first.",
+      "error"
+    );
+
+    return;
+  }
+
+  if (
+    used + file.size >
+    allocated
+  ) {
+
+    showToast(
+      `Not enough storage. Remaining: ${formatBytes(
+        allocated - used
+      )}`,
+      "error"
+    );
+
+    return;
+  }
+
+  try {
+
+    setBusy(
+      button,
+      true,
+      "Uploading..."
+    );
+
+    const safeName =
+      file.name.replace(
+        /[^a-zA-Z0-9._-]/g,
+        "_"
+      );
+
+    const uniqueName =
+      `${Date.now()}_${safeName}`;
+
+    const path =
+      `adminFiles/${state.user.uid}/${uniqueName}`;
+
+    const storageRef =
+      ref(storage, path);
+
+    await uploadBytes(
+      storageRef,
+      file
+    );
+
+    const url =
+      await getDownloadURL(
+        storageRef
+      );
+
+    await addDoc(
+      collection(db, "files"),
+      {
+        adminId:
+          state.user.uid,
+
+        name:
+          file.name,
+
+        size:
+          file.size,
+
+        type:
+          file.type || "application/octet-stream",
+
+        path,
+
+        url,
+
+        createdAt:
+          serverTimestamp()
+      }
+    );
+
+    input.value = "";
+
+    showToast(
+      "File uploaded successfully."
+    );
+
+    await loadStorageData();
+
+    renderDashboard();
+
+    renderFilesPage();
+
+  } catch (error) {
+
+    console.error(error);
+
+    showToast(
+      error.message ||
+      "Unable to upload file.",
+      "error"
+    );
+
+  } finally {
+
+    setBusy(
+      button,
+      false
+    );
+  }
+}
+
+async function deleteStorageFile(fileId) {
+
+  const file =
+    state.files.find(
+      x => x.id === fileId
+    );
+
+  if (!file) return;
+
+  if (
+    !confirm(
+      `Delete "${file.name}"?`
+    )
+  ) {
+    return;
+  }
+
+  try {
+
+    if (file.path) {
+
+      try {
+
+        await deleteObject(
+          ref(
+            storage,
+            file.path
+          )
+        );
+
+      } catch (storageError) {
+
+        console.warn(
+          "Storage delete warning:",
+          storageError
+        );
+      }
+    }
+
+    await deleteDoc(
+      doc(
+        db,
+        "files",
+        fileId
+      )
+    );
+
+    showToast(
+      "File deleted. Storage space freed."
+    );
+
+    await loadStorageData();
+
+    renderDashboard();
+
+    renderFilesPage();
+
+  } catch (error) {
+
+    console.error(error);
+
+    showToast(
+      "Unable to delete file.",
+      "error"
+    );
+  }
 }
 
 
@@ -482,59 +1444,96 @@ async function loadAllData() {
   state.tasks = [];
   state.assignments = [];
   state.tests = [];
+  state.files = [];
 
   if (isAdmin()) {
 
-    const studentsSnap = await getDocs(
-      query(
-        collection(db, "users"),
-        where("role", "==", "student"),
-        where("adminId", "==", state.user.uid)
-      )
-    );
+    const studentsSnap =
+      await getDocs(
+        query(
+          collection(db, "users"),
+          where(
+            "role",
+            "==",
+            "student"
+          ),
+          where(
+            "adminId",
+            "==",
+            state.user.uid
+          )
+        )
+      );
 
-    state.students = studentsSnap.docs.map(d => ({
-      id: d.id,
-      ...d.data()
-    }));
+    state.students =
+      studentsSnap.docs.map(
+        d => ({
+          id: d.id,
+          ...d.data()
+        })
+      );
 
-    const tasksSnap = await getDocs(
-      query(
-        collection(db, "tasks"),
-        where("adminId", "==", state.user.uid)
-      )
-    );
+    const tasksSnap =
+      await getDocs(
+        query(
+          collection(db, "tasks"),
+          where(
+            "adminId",
+            "==",
+            state.user.uid
+          )
+        )
+      );
 
-    state.tasks = tasksSnap.docs.map(d => ({
-      id: d.id,
-      ...d.data()
-    }));
+    state.tasks =
+      tasksSnap.docs.map(
+        d => ({
+          id: d.id,
+          ...d.data()
+        })
+      );
 
-    const assignmentsSnap = await getDocs(
-      query(
-        collection(db, "assignments"),
-        where("adminId", "==", state.user.uid)
-      )
-    );
+    const assignmentsSnap =
+      await getDocs(
+        query(
+          collection(db, "assignments"),
+          where(
+            "adminId",
+            "==",
+            state.user.uid
+          )
+        )
+      );
 
     state.assignments =
-      assignmentsSnap.docs.map(d => ({
-        id: d.id,
-        ...d.data()
-      }));
+      assignmentsSnap.docs.map(
+        d => ({
+          id: d.id,
+          ...d.data()
+        })
+      );
 
-    const testsSnap = await getDocs(
-      query(
-        collection(db, "tests"),
-        where("adminId", "==", state.user.uid)
-      )
-    );
+    const testsSnap =
+      await getDocs(
+        query(
+          collection(db, "tests"),
+          where(
+            "adminId",
+            "==",
+            state.user.uid
+          )
+        )
+      );
 
     state.tests =
-      testsSnap.docs.map(d => ({
-        id: d.id,
-        ...d.data()
-      }));
+      testsSnap.docs.map(
+        d => ({
+          id: d.id,
+          ...d.data()
+        })
+      );
+
+    await loadStorageData();
 
     return;
   }
@@ -542,52 +1541,69 @@ async function loadAllData() {
 
   if (isSuperAdmin()) {
 
-    const usersSnap = await getDocs(
-      collection(db, "users")
-    );
+    const usersSnap =
+      await getDocs(
+        collection(db, "users")
+      );
 
-    const users = usersSnap.docs.map(d => ({
-      id: d.id,
-      ...d.data()
-    }));
+    const users =
+      usersSnap.docs.map(
+        d => ({
+          id: d.id,
+          ...d.data()
+        })
+      );
 
-    state.students = users.filter(
-      u => u.role === "student"
-    );
+    state.students =
+      users.filter(
+        u => u.role === "student"
+      );
 
-    state.admins = users.filter(
-      u => u.role === "admin"
-    );
+    state.admins =
+      users.filter(
+        u => u.role === "admin"
+      );
 
-    const tasksSnap = await getDocs(
-      collection(db, "tasks")
-    );
+    const tasksSnap =
+      await getDocs(
+        collection(db, "tasks")
+      );
 
     state.tasks =
-      tasksSnap.docs.map(d => ({
-        id: d.id,
-        ...d.data()
-      }));
+      tasksSnap.docs.map(
+        d => ({
+          id: d.id,
+          ...d.data()
+        })
+      );
 
-    const assignmentsSnap = await getDocs(
-      collection(db, "assignments")
-    );
+    const assignmentsSnap =
+      await getDocs(
+        collection(db, "assignments")
+      );
 
     state.assignments =
-      assignmentsSnap.docs.map(d => ({
-        id: d.id,
-        ...d.data()
-      }));
+      assignmentsSnap.docs.map(
+        d => ({
+          id: d.id,
+          ...d.data()
+        })
+      );
 
-    const testsSnap = await getDocs(
-      collection(db, "tests")
-    );
+    const testsSnap =
+      await getDocs(
+        collection(db, "tests")
+      );
 
     state.tests =
-      testsSnap.docs.map(d => ({
-        id: d.id,
-        ...d.data()
-      }));
+      testsSnap.docs.map(
+        d => ({
+          id: d.id,
+          ...d.data()
+        })
+      );
+
+    await loadAdminStorageData();
 
     return;
   }
@@ -595,44 +1611,65 @@ async function loadAllData() {
 
   if (isStudent()) {
 
-    const tasksSnap = await getDocs(
-      query(
-        collection(db, "tasks"),
-        where("studentId", "==", state.user.uid)
-      )
-    );
+    const tasksSnap =
+      await getDocs(
+        query(
+          collection(db, "tasks"),
+          where(
+            "studentId",
+            "==",
+            state.user.uid
+          )
+        )
+      );
 
     state.tasks =
-      tasksSnap.docs.map(d => ({
-        id: d.id,
-        ...d.data()
-      }));
+      tasksSnap.docs.map(
+        d => ({
+          id: d.id,
+          ...d.data()
+        })
+      );
 
-    const assignmentsSnap = await getDocs(
-      query(
-        collection(db, "assignments"),
-        where("studentId", "==", state.user.uid)
-      )
-    );
+    const assignmentsSnap =
+      await getDocs(
+        query(
+          collection(db, "assignments"),
+          where(
+            "studentId",
+            "==",
+            state.user.uid
+          )
+        )
+      );
 
     state.assignments =
-      assignmentsSnap.docs.map(d => ({
-        id: d.id,
-        ...d.data()
-      }));
+      assignmentsSnap.docs.map(
+        d => ({
+          id: d.id,
+          ...d.data()
+        })
+      );
 
-    const testsSnap = await getDocs(
-      query(
-        collection(db, "tests"),
-        where("studentId", "==", state.user.uid)
-      )
-    );
+    const testsSnap =
+      await getDocs(
+        query(
+          collection(db, "tests"),
+          where(
+            "studentId",
+            "==",
+            state.user.uid
+          )
+        )
+      );
 
     state.tests =
-      testsSnap.docs.map(d => ({
-        id: d.id,
-        ...d.data()
-      }));
+      testsSnap.docs.map(
+        d => ({
+          id: d.id,
+          ...d.data()
+        })
+      );
   }
 }
 
@@ -649,16 +1686,21 @@ function updateUserUI() {
     "User";
 
   const role =
-    state.profile?.role || "User";
+    state.profile?.role ||
+    "User";
 
   document
-    .querySelectorAll("[data-user-name]")
+    .querySelectorAll(
+      "[data-user-name]"
+    )
     .forEach(el => {
       el.textContent = name;
     });
 
   document
-    .querySelectorAll("[data-user-role]")
+    .querySelectorAll(
+      "[data-user-role]"
+    )
     .forEach(el => {
       el.textContent = role;
     });
@@ -675,30 +1717,60 @@ function updateUserUI() {
 ========================================================= */
 
 const pageNames = {
-  dashboard: ["Dashboard", "Overview"],
-  students: ["Students", "Manage student accounts"],
-  tasks: ["Tasks", "Manage daily tasks"],
-  assignments: ["Assignments", "Manage assignments"],
-  tests: ["Tests", "Manage tests"],
-  admins: ["Admins", "Administrator accounts"],
-  progress: ["Progress", "Student performance"],
-  myTasks: ["My Tasks", "Your assigned tasks"],
-  myAssignments: ["My Assignments", "Your assignments"],
-  myTests: ["My Tests", "Your test results"]
+
+  dashboard:
+    ["Dashboard", "Overview"],
+
+  students:
+    ["Students", "Manage student accounts"],
+
+  tasks:
+    ["Tasks", "Manage daily tasks"],
+
+  assignments:
+    ["Assignments", "Manage assignments"],
+
+  tests:
+    ["Tests", "Manage tests"],
+
+  admins:
+    ["Admins", "Administrator accounts"],
+
+  progress:
+    ["Progress", "Student performance"],
+
+  files:
+    ["My Storage", "Manage your uploaded files"],
+
+  myTasks:
+    ["My Tasks", "Your assigned tasks"],
+
+  myAssignments:
+    ["My Assignments", "Your assignments"],
+
+  myTests:
+    ["My Tests", "Your test results"]
 };
 
 function updateNavigationVisibility() {
 
-  const role = currentRole();
+  const role =
+    currentRole();
 
   document
-    .querySelectorAll(".nav-item")
+    .querySelectorAll(
+      ".nav-item"
+    )
     .forEach(button => {
 
+      const roles =
+        button.dataset.role;
+
       const allowed =
-        button.dataset.role === "all" ||
-        button.dataset.role
-          ?.split(",")
+        !roles ||
+        roles === "all" ||
+        roles
+          .split(",")
           .includes(role);
 
       button.classList.toggle(
@@ -718,25 +1790,33 @@ async function showPage(page) {
     "tests",
     "admins",
     "progress",
+    "files",
     "myTasks",
     "myAssignments",
     "myTests"
   ];
 
-  if (!allowedPages.includes(page)) {
+  if (
+    !allowedPages.includes(page)
+  ) {
     page = "dashboard";
   }
 
-  const role = currentRole();
+  const role =
+    currentRole();
 
   const button =
     [...document.querySelectorAll(".nav-item")]
-      .find(x => x.dataset.page === page);
+      .find(
+        x => x.dataset.page === page
+      );
 
   if (
     button &&
-    button.dataset.role !== "all" &&
-    !button.dataset.role.split(",").includes(role)
+    button.dataset.role &&
+    !button.dataset.role
+      .split(",")
+      .includes(role)
   ) {
     page = "dashboard";
   }
@@ -744,31 +1824,43 @@ async function showPage(page) {
   state.currentPage = page;
 
   document
-    .querySelectorAll("[data-page-section]")
+    .querySelectorAll(
+      "[data-page-section]"
+    )
     .forEach(section => {
+
       section.classList.toggle(
         "hidden",
         section.dataset.pageSection !== page
       );
+
     });
 
   document
-    .querySelectorAll(".nav-item")
+    .querySelectorAll(
+      ".nav-item"
+    )
     .forEach(item => {
+
       item.classList.toggle(
         "active",
         item.dataset.page === page
       );
+
     });
 
-  const title = pageNames[page] || ["Dashboard", "Overview"];
+  const title =
+    pageNames[page] ||
+    ["Dashboard", "Overview"];
 
   if ($("pageTitle")) {
-    $("pageTitle").textContent = title[0];
+    $("pageTitle").textContent =
+      title[0];
   }
 
   if ($("pageSubtitle")) {
-    $("pageSubtitle").textContent = title[1];
+    $("pageSubtitle").textContent =
+      title[1];
   }
 
   closeSidebar();
@@ -785,37 +1877,38 @@ function renderDashboard() {
 
   const completedTasks =
     state.tasks.filter(
-      task => task.status === "completed"
-    ).length;
-
-  const pendingTasks =
-    state.tasks.filter(
-      task => task.status !== "completed"
+      task =>
+        task.status === "completed"
     ).length;
 
   const submittedAssignments =
     state.assignments.filter(
-      x => x.submitted === true
+      x =>
+        x.submitted === true
     ).length;
 
   const totalMarks =
     state.tests.reduce(
       (sum, test) =>
-        sum + Number(test.marks || 0),
+        sum +
+        Number(test.marks || 0),
       0
     );
 
   const totalPossible =
     state.tests.reduce(
       (sum, test) =>
-        sum + Number(test.totalMarks || 0),
+        sum +
+        Number(test.totalMarks || 0),
       0
     );
 
   const average =
     totalPossible > 0
       ? Math.round(
-          (totalMarks / totalPossible) * 100
+          totalMarks /
+          totalPossible *
+          100
         )
       : 0;
 
@@ -824,73 +1917,177 @@ function renderDashboard() {
   if (isStudent()) {
 
     cards = [
-      ["✓", state.tasks.length, "Total Tasks"],
-      ["✓", completedTasks, "Completed Tasks"],
-      ["📝", state.assignments.length, "Assignments"],
-      ["📊", `${average}%`, "Test Average"]
+      [
+        "✓",
+        state.tasks.length,
+        "Total Tasks"
+      ],
+
+      [
+        "✓",
+        completedTasks,
+        "Completed Tasks"
+      ],
+
+      [
+        "📝",
+        state.assignments.length,
+        "Assignments"
+      ],
+
+      [
+        "📊",
+        `${average}%`,
+        "Test Average"
+      ]
     ];
 
   } else {
 
     cards = [
-      ["👥", state.students.length, "Students"],
-      ["✓", state.tasks.length, "Total Tasks"],
-      ["✓", completedTasks, "Completed Tasks"],
-      ["📝", submittedAssignments, "Submitted Assignments"]
+      [
+        "👥",
+        state.students.length,
+        "Students"
+      ],
+
+      [
+        "✓",
+        state.tasks.length,
+        "Total Tasks"
+      ],
+
+      [
+        "✓",
+        completedTasks,
+        "Completed Tasks"
+      ],
+
+      [
+        "📝",
+        submittedAssignments,
+        "Submitted Assignments"
+      ]
     ];
   }
 
   $("statsGrid").innerHTML =
-    cards.map(card => `
-      <div class="stat-card">
-        <div class="stat-icon">${card[0]}</div>
-        <h3>${esc(card[1])}</h3>
-        <p>${esc(card[2])}</p>
-      </div>
-    `).join("");
+    cards.map(
+      card => `
+        <div class="stat-card">
+
+          <div class="stat-icon">
+            ${card[0]}
+          </div>
+
+          <h3>
+            ${esc(card[1])}
+          </h3>
+
+          <p>
+            ${esc(card[2])}
+          </p>
+
+        </div>
+      `
+    ).join("");
+
+  const storage =
+    renderStorageCard();
+
+  if (storage) {
+
+    const existing =
+      $("dashboardStorage");
+
+    if (existing) {
+      existing.innerHTML =
+        storage;
+    }
+  }
 
   renderRecentActivity();
+
   renderDashboardProgress();
 }
 
+
+/* =========================================================
+   RECENT ACTIVITY
+========================================================= */
 
 function renderRecentActivity() {
 
   const items = [];
 
   state.tasks.forEach(task => {
+
     items.push({
-      time: getTime(task.completedAt || task.assignedAt),
+      time:
+        getTime(
+          task.completedAt ||
+          task.assignedAt
+        ),
+
       title:
         task.status === "completed"
           ? `${task.title || "Task"} completed`
           : `${task.title || "Task"} assigned`,
-      date: task.completedAt || task.assignedAt
+
+      date:
+        task.completedAt ||
+        task.assignedAt
     });
+
   });
 
   state.assignments.forEach(item => {
+
     items.push({
-      time: getTime(item.submissionDate || item.createdAt),
+      time:
+        getTime(
+          item.submissionDate ||
+          item.createdAt
+        ),
+
       title:
         item.submitted
           ? `${item.title || "Assignment"} submitted`
           : `${item.title || "Assignment"} assigned`,
-      date: item.submissionDate || item.createdAt
+
+      date:
+        item.submissionDate ||
+        item.createdAt
     });
+
   });
 
   state.tests.forEach(test => {
+
     items.push({
-      time: getTime(test.testDate || test.createdAt),
-      title: `${test.title || "Test"} recorded`,
-      date: test.testDate || test.createdAt
+      time:
+        getTime(
+          test.testDate ||
+          test.createdAt
+        ),
+
+      title:
+        `${test.title || "Test"} recorded`,
+
+      date:
+        test.testDate ||
+        test.createdAt
     });
+
   });
 
-  items.sort((a,b) => b.time - a.time);
+  items.sort(
+    (a,b) =>
+      b.time - a.time
+  );
 
-  const recent = items.slice(0, 7);
+  const recent =
+    items.slice(0, 7);
 
   if (!recent.length) {
 
@@ -905,21 +2102,38 @@ function renderRecentActivity() {
   }
 
   $("recentActivity").innerHTML =
-    recent.map(item => `
-      <div class="activity-item">
-        <div class="activity-dot"></div>
-        <div>
-          <strong>${esc(item.title)}</strong>
-          <small>${formatDateTime(item.date)}</small>
+    recent.map(
+      item => `
+        <div class="activity-item">
+
+          <div class="activity-dot"></div>
+
+          <div>
+            <strong>
+              ${esc(item.title)}
+            </strong>
+
+            <small>
+              ${formatDateTime(item.date)}
+            </small>
+          </div>
+
         </div>
-      </div>
-    `).join("");
+      `
+    ).join("");
 }
 
 
+/* =========================================================
+   DASHBOARD PROGRESS
+========================================================= */
+
 function renderDashboardProgress() {
 
-  if (!isStudent() && !state.students.length) {
+  if (
+    !isStudent() &&
+    !state.students.length
+  ) {
 
     $("dashboardProgress").innerHTML = `
       <div class="empty-state">
@@ -930,49 +2144,72 @@ function renderDashboardProgress() {
     return;
   }
 
-  const students = isStudent()
-    ? [{
-        id: state.user.uid,
-        name: state.profile?.name || "Student"
-      }]
-    : state.students;
+  const students =
+    isStudent()
+      ? [{
+          id: state.user.uid,
+          name:
+            state.profile?.name ||
+            "Student"
+        }]
+      : state.students;
 
   $("dashboardProgress").innerHTML =
-    students.slice(0, 8).map(student => {
+    students
+      .slice(0, 8)
+      .map(student => {
 
-      const tasks =
-        state.tasks.filter(
-          x => x.studentId === student.id
-        );
+        const tasks =
+          state.tasks.filter(
+            x =>
+              x.studentId ===
+              student.id
+          );
 
-      const completed =
-        tasks.filter(
-          x => x.status === "completed"
-        ).length;
+        const completed =
+          tasks.filter(
+            x =>
+              x.status ===
+              "completed"
+          ).length;
 
-      const percent =
-        tasks.length
-          ? Math.round(
-              completed / tasks.length * 100
-            )
-          : 0;
+        const percent =
+          tasks.length
+            ? Math.round(
+                completed /
+                tasks.length *
+                100
+              )
+            : 0;
 
-      return `
-        <div class="progress-row">
-          <div class="progress-label">
-            <span>${esc(student.name)}</span>
-            <strong>${percent}%</strong>
+        return `
+          <div class="progress-row">
+
+            <div class="progress-label">
+
+              <span>
+                ${esc(student.name)}
+              </span>
+
+              <strong>
+                ${percent}%
+              </strong>
+
+            </div>
+
+            <div class="progress-track">
+
+              <div
+                class="progress-fill"
+                style="width:${percent}%"
+              ></div>
+
+            </div>
+
           </div>
+        `;
 
-          <div class="progress-track">
-            <div
-              class="progress-fill"
-              style="width:${percent}%"
-            ></div>
-          </div>
-        </div>
-      `;
-    }).join("");
+      }).join("");
 }
 
 
@@ -983,21 +2220,25 @@ function renderDashboardProgress() {
 function renderStudents() {
 
   const search =
-    clean($("studentSearch")?.value).toLowerCase();
+    clean(
+      $("studentSearch")?.value
+    ).toLowerCase();
 
   const students =
-    state.students.filter(student => {
+    state.students.filter(
+      student => {
 
-      const text = [
-        student.name,
-        student.email,
-        student.className
-      ]
-        .join(" ")
-        .toLowerCase();
+        const text = [
+          student.name,
+          student.email,
+          student.className
+        ]
+          .join(" ")
+          .toLowerCase();
 
-      return text.includes(search);
-    });
+        return text.includes(search);
+      }
+    );
 
   if (!students.length) {
 
@@ -1013,6 +2254,7 @@ function renderStudents() {
 
   $("studentsList").innerHTML = `
     <table class="data-table">
+
       <thead>
         <tr>
           <th>Student</th>
@@ -1026,73 +2268,103 @@ function renderStudents() {
 
       <tbody>
 
-        ${students.map(student => {
+        ${students.map(
+          student => {
 
-          const admin =
-            state.admins.find(
-              x => x.id === student.adminId
-            );
+            const admin =
+              state.admins.find(
+                x =>
+                  x.id ===
+                  student.adminId
+              );
 
-          const adminName =
-            admin?.name ||
-            (student.adminId
-              ? "Assigned Admin"
-              : "Unassigned");
+            const adminName =
+              admin?.name ||
+              (
+                student.adminId
+                  ? "Assigned Admin"
+                  : "Unassigned"
+              );
 
-          return `
-            <tr>
+            return `
+              <tr>
 
-              <td>
-                <strong>${esc(student.name)}</strong>
-                <br>
-                <small>${esc(student.email)}</small>
-              </td>
+                <td>
+                  <strong>
+                    ${esc(student.name)}
+                  </strong>
 
-              <td>${esc(student.className || "—")}</td>
+                  <br>
 
-              <td>${esc(student.age || "—")}</td>
+                  <small>
+                    ${esc(student.email)}
+                  </small>
+                </td>
 
-              <td>${esc(
-                isSuperAdmin()
-                  ? adminName
-                  : "You"
-              )}</td>
+                <td>
+                  ${esc(
+                    student.className ||
+                    "—"
+                  )}
+                </td>
 
-              <td>
-                ${statusBadge(
-                  student.active === false
-                    ? "inactive"
-                    : "active"
-                )}
-              </td>
+                <td>
+                  ${esc(
+                    student.age ||
+                    "—"
+                  )}
+                </td>
 
-              <td>
-                <button
-                  class="danger-btn"
-                  data-delete-student="${student.id}"
-                >
-                  Delete
-                </button>
-              </td>
+                <td>
+                  ${esc(
+                    isSuperAdmin()
+                      ? adminName
+                      : "You"
+                  )}
+                </td>
 
-            </tr>
-          `;
+                <td>
+                  ${statusBadge(
+                    student.active === false
+                      ? "inactive"
+                      : "active"
+                  )}
+                </td>
 
-        }).join("")}
+                <td>
+
+                  <button
+                    class="danger-btn"
+                    data-delete-student="${student.id}"
+                  >
+                    Delete
+                  </button>
+
+                </td>
+
+              </tr>
+            `;
+
+          }
+        ).join("")}
 
       </tbody>
+
     </table>
   `;
 
   document
-    .querySelectorAll("[data-delete-student]")
+    .querySelectorAll(
+      "[data-delete-student]"
+    )
     .forEach(button => {
 
       button.addEventListener(
         "click",
-        () => deleteStudent(
-          button.dataset.deleteStudent
-        )
+        () =>
+          deleteStudent(
+            button.dataset.deleteStudent
+          )
       );
 
     });
@@ -1105,81 +2377,159 @@ function renderStudents() {
 
 function openStudentModal() {
 
-  const adminOptions = isSuperAdmin()
-    ? `
-      <label>
-        Assign Admin
-        <select id="studentAdminId">
-          <option value="">No Admin</option>
-          ${state.admins.map(admin => `
-            <option value="${admin.id}">
-              ${esc(admin.name)} — ${esc(admin.email)}
+  const adminOptions =
+    isSuperAdmin()
+      ? `
+        <label>
+          Assign Admin
+
+          <select id="studentAdminId">
+
+            <option value="">
+              No Admin
             </option>
-          `).join("")}
-        </select>
-      </label>
-    `
-    : "";
+
+            ${state.admins.map(
+              admin => `
+                <option value="${admin.id}">
+                  ${esc(admin.name)}
+                  —
+                  ${esc(admin.email)}
+                </option>
+              `
+            ).join("")}
+
+          </select>
+        </label>
+      `
+      : "";
 
   openModal(
     "Add Student",
+
     `
-      <form id="studentForm" class="modal-form">
+      <form
+        id="studentForm"
+        class="modal-form"
+      >
 
         <div class="form-row">
 
           <div class="form-group">
+
             <label>
               Student Name
-              <input id="studentName" required>
+
+              <input
+                id="studentName"
+                required
+              >
+
             </label>
+
           </div>
 
           <div class="form-group">
+
             <label>
               Age
-              <input id="studentAge" type="number" min="3" max="100">
+
+              <input
+                id="studentAge"
+                type="number"
+                min="3"
+                max="100"
+              >
+
             </label>
+
           </div>
 
         </div>
 
         <div class="form-group">
+
           <label>
             Class
-            <input id="studentClass" placeholder="e.g. Class 8">
+
+            <input
+              id="studentClass"
+              placeholder="e.g. Class 8"
+            >
+
           </label>
+
         </div>
 
         <div class="form-group">
+
           <label>
             Email
-            <input id="studentEmail" type="email" required>
+
+            <input
+              id="studentEmail"
+              type="email"
+              required
+            >
+
           </label>
+
         </div>
 
         <div class="form-group">
+
           <label>
             Password
-            <input id="studentPassword" type="password" minlength="6" required>
+
+            <div class="password-wrap">
+
+              <input
+                id="studentPassword"
+                type="password"
+                minlength="6"
+                required
+              >
+
+              <button
+                type="button"
+                class="password-eye"
+                data-password-target="studentPassword"
+              >
+                👁️
+              </button>
+
+            </div>
+
           </label>
+
         </div>
 
         ${adminOptions}
 
         <div class="modal-actions">
-          <button type="button" class="secondary-btn" data-close-modal>
+
+          <button
+            type="button"
+            class="secondary-btn"
+            data-close-modal
+          >
             Cancel
           </button>
 
-          <button type="submit" class="primary-btn">
+          <button
+            type="submit"
+            class="primary-btn"
+          >
             Create Student
           </button>
+
         </div>
 
       </form>
     `
   );
+
+  setupPasswordEyes();
 
   $("studentForm")
     ?.addEventListener(
@@ -1188,46 +2538,84 @@ function openStudentModal() {
     );
 }
 
-
 async function createStudent(event) {
 
   event.preventDefault();
 
-  const button = event.submitter;
+  const button =
+    event.submitter;
 
   const body = {
-    name: clean($("studentName")?.value),
-    email: clean($("studentEmail")?.value).toLowerCase(),
-    password: $("studentPassword")?.value || "",
-    age: $("studentAge")?.value || "",
-    className: clean($("studentClass")?.value),
-    adminId: $("studentAdminId")?.value || ""
+
+    name:
+      clean(
+        $("studentName")?.value
+      ),
+
+    email:
+      clean(
+        $("studentEmail")?.value
+      ).toLowerCase(),
+
+    password:
+      $("studentPassword")?.value ||
+      "",
+
+    age:
+      $("studentAge")?.value ||
+      "",
+
+    className:
+      clean(
+        $("studentClass")?.value
+      ),
+
+    adminId:
+      $("studentAdminId")?.value ||
+      ""
+
   };
 
   try {
 
-    setBusy(button, true, "Creating...");
+    setBusy(
+      button,
+      true,
+      "Creating..."
+    );
 
     const token =
       await state.user.getIdToken();
 
-    const response = await fetch(
-      "/api/create-user",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify(body)
-      }
-    );
+    const response =
+      await fetch(
+        "/api/create-user",
+        {
+          method: "POST",
 
-    const data = await response.json();
+          headers: {
+            "Content-Type":
+              "application/json",
 
-    if (!response.ok || !data.success) {
+            Authorization:
+              `Bearer ${token}`
+          },
+
+          body:
+            JSON.stringify(body)
+        }
+      );
+
+    const data =
+      await response.json();
+
+    if (
+      !response.ok ||
+      !data.success
+    ) {
       throw new Error(
-        data.message || "Unable to create student."
+        data.message ||
+        "Unable to create student."
       );
     }
 
@@ -1238,6 +2626,7 @@ async function createStudent(event) {
     );
 
     await loadAllData();
+
     renderCurrentPage();
 
   } catch (error) {
@@ -1245,18 +2634,23 @@ async function createStudent(event) {
     console.error(error);
 
     showToast(
-      error.message || "Unable to create student.",
+      error.message ||
+      "Unable to create student.",
       "error"
     );
 
   } finally {
 
-    setBusy(button, false);
+    setBusy(
+      button,
+      false
+    );
   }
 }
 
-
-async function deleteStudent(studentId) {
+async function deleteStudent(
+  studentId
+) {
 
   const student =
     state.students.find(
@@ -1265,36 +2659,50 @@ async function deleteStudent(studentId) {
 
   if (!student) return;
 
-  const confirmed = confirm(
-    `Delete ${student.name}'s account?\n\nThis will also delete the student's tasks, assignments and tests.`
-  );
-
-  if (!confirmed) return;
+  if (
+    !confirm(
+      `Delete ${student.name}'s account?\n\nThis will also delete the student's tasks, assignments and tests.`
+    )
+  ) {
+    return;
+  }
 
   try {
 
     const token =
       await state.user.getIdToken();
 
-    const response = await fetch(
-      "/api/delete-user",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          studentId
-        })
-      }
-    );
+    const response =
+      await fetch(
+        "/api/delete-user",
+        {
+          method: "POST",
 
-    const data = await response.json();
+          headers: {
+            "Content-Type":
+              "application/json",
 
-    if (!response.ok || !data.success) {
+            Authorization:
+              `Bearer ${token}`
+          },
+
+          body:
+            JSON.stringify({
+              studentId
+            })
+        }
+      );
+
+    const data =
+      await response.json();
+
+    if (
+      !response.ok ||
+      !data.success
+    ) {
       throw new Error(
-        data.message || "Unable to delete student."
+        data.message ||
+        "Unable to delete student."
       );
     }
 
@@ -1303,6 +2711,7 @@ async function deleteStudent(studentId) {
     );
 
     await loadAllData();
+
     renderCurrentPage();
 
   } catch (error) {
@@ -1310,7 +2719,8 @@ async function deleteStudent(studentId) {
     console.error(error);
 
     showToast(
-      error.message || "Unable to delete student.",
+      error.message ||
+      "Unable to delete student.",
       "error"
     );
   }
@@ -1318,16 +2728,21 @@ async function deleteStudent(studentId) {
 
 
 /* =========================================================
-   ADMIN SELECT
+   OWNER
 ========================================================= */
 
-function getStudentOwnerAdminId(student) {
+function getStudentOwnerAdminId(
+  student
+) {
 
   if (isAdmin()) {
     return state.user.uid;
   }
 
-  return student?.adminId || state.user.uid;
+  return (
+    student?.adminId ||
+    state.user.uid
+  );
 }
 
 
@@ -1351,15 +2766,18 @@ function renderTasks() {
 
   $("tasksList").innerHTML =
     state.tasks
-      .sort((a,b) =>
-        getTime(b.createdAt) -
-        getTime(a.createdAt)
+      .sort(
+        (a,b) =>
+          getTime(b.createdAt) -
+          getTime(a.createdAt)
       )
       .map(task => {
 
         const student =
           state.students.find(
-            x => x.id === task.studentId
+            x =>
+              x.id ===
+              task.studentId
           );
 
         return `
@@ -1368,15 +2786,23 @@ function renderTasks() {
             <div class="card-top">
 
               <div>
-                <h3>${esc(task.title)}</h3>
+
+                <h3>
+                  ${esc(task.title)}
+                </h3>
 
                 <p>
-                  ${esc(task.description || "No description.")}
+                  ${esc(
+                    task.description ||
+                    "No description."
+                  )}
                 </p>
+
               </div>
 
               ${statusBadge(
-                task.status || "pending"
+                task.status ||
+                "pending"
               )}
 
             </div>
@@ -1384,16 +2810,12 @@ function renderTasks() {
             <div class="card-meta">
 
               <span class="badge">
-                Student: ${esc(student?.name || "Student")}
+                Student:
+                ${esc(
+                  student?.name ||
+                  "Student"
+                )}
               </span>
-
-              ${
-                task.assignedAt
-                  ? `<span class="badge">
-                      Assigned: ${formatDate(task.assignedAt)}
-                    </span>`
-                  : ""
-              }
 
             </div>
 
@@ -1410,18 +2832,23 @@ function renderTasks() {
 
           </div>
         `;
+
       }).join("");
 
   document
-    .querySelectorAll("[data-delete-task]")
+    .querySelectorAll(
+      "[data-delete-task]"
+    )
     .forEach(button => {
 
-      button.onclick = () =>
-        deleteTask(button.dataset.deleteTask);
+      button.onclick =
+        () =>
+          deleteTask(
+            button.dataset.deleteTask
+          );
 
     });
 }
-
 
 function openTaskModal() {
 
@@ -1437,46 +2864,87 @@ function openTaskModal() {
 
   openModal(
     "Create Task",
+
     `
-      <form id="taskForm" class="modal-form">
+      <form
+        id="taskForm"
+        class="modal-form"
+      >
 
         <div class="form-group">
+
           <label>
             Student
-            <select id="taskStudent" required>
-              <option value="">Select student</option>
 
-              ${state.students.map(student => `
-                <option value="${student.id}">
-                  ${esc(student.name)}
-                </option>
-              `).join("")}
+            <select
+              id="taskStudent"
+              required
+            >
+
+              <option value="">
+                Select student
+              </option>
+
+              ${state.students.map(
+                student => `
+                  <option
+                    value="${student.id}"
+                  >
+                    ${esc(student.name)}
+                  </option>
+                `
+              ).join("")}
 
             </select>
+
           </label>
+
         </div>
 
         <div class="form-group">
+
           <label>
             Task Title
-            <input id="taskTitle" required placeholder="Task title">
+
+            <input
+              id="taskTitle"
+              required
+              placeholder="Task title"
+            >
+
           </label>
+
         </div>
 
         <div class="form-group">
+
           <label>
             Description
-            <textarea id="taskDescription" rows="4" placeholder="Task description"></textarea>
+
+            <textarea
+              id="taskDescription"
+              rows="4"
+              placeholder="Task description"
+            ></textarea>
+
           </label>
+
         </div>
 
         <div class="modal-actions">
 
-          <button type="button" class="secondary-btn" data-close-modal>
+          <button
+            type="button"
+            class="secondary-btn"
+            data-close-modal
+          >
             Cancel
           </button>
 
-          <button type="submit" class="primary-btn">
+          <button
+            type="submit"
+            class="primary-btn"
+          >
             Create Task
           </button>
 
@@ -1493,58 +2961,94 @@ function openTaskModal() {
     );
 }
 
-
 async function createTask(event) {
 
   event.preventDefault();
 
-  const button = event.submitter;
+  const button =
+    event.submitter;
 
   const studentId =
     $("taskStudent")?.value;
 
   const student =
     state.students.find(
-      x => x.id === studentId
+      x =>
+        x.id ===
+        studentId
     );
 
   if (!student) {
-    showToast("Please select a student.", "error");
+
+    showToast(
+      "Please select a student.",
+      "error"
+    );
+
     return;
   }
 
   try {
 
-    setBusy(button, true, "Creating...");
+    setBusy(
+      button,
+      true,
+      "Creating..."
+    );
 
     await addDoc(
       collection(db, "tasks"),
       {
-        title: clean($("taskTitle")?.value),
-        description: clean($("taskDescription")?.value),
+
+        title:
+          clean(
+            $("taskTitle")?.value
+          ),
+
+        description:
+          clean(
+            $("taskDescription")?.value
+          ),
 
         studentId,
 
         adminId:
-          getStudentOwnerAdminId(student),
+          getStudentOwnerAdminId(
+            student
+          ),
 
-        status: "pending",
+        status:
+          "pending",
 
-        assignedAt: serverTimestamp(),
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+        assignedAt:
+          serverTimestamp(),
 
-        acceptedAt: null,
-        completedAt: null,
-        completionSeconds: null
+        createdAt:
+          serverTimestamp(),
+
+        updatedAt:
+          serverTimestamp(),
+
+        acceptedAt:
+          null,
+
+        completedAt:
+          null,
+
+        completionSeconds:
+          null
+
       }
     );
 
     closeModal();
 
-    showToast("Task created successfully.");
+    showToast(
+      "Task created successfully."
+    );
 
     await loadAllData();
+
     renderCurrentPage();
 
   } catch (error) {
@@ -1552,30 +3056,42 @@ async function createTask(event) {
     console.error(error);
 
     showToast(
-      error.message || "Unable to create task.",
+      error.message ||
+      "Unable to create task.",
       "error"
     );
 
   } finally {
 
-    setBusy(button, false);
+    setBusy(
+      button,
+      false
+    );
   }
 }
 
+async function deleteTask(id) {
 
-async function deleteTask(taskId) {
-
-  if (!confirm("Delete this task?")) return;
+  if (
+    !confirm(
+      "Delete this task?"
+    )
+  ) {
+    return;
+  }
 
   try {
 
     await deleteDoc(
-      doc(db, "tasks", taskId)
+      doc(db, "tasks", id)
     );
 
-    showToast("Task deleted.");
+    showToast(
+      "Task deleted."
+    );
 
     await loadAllData();
+
     renderCurrentPage();
 
   } catch (error) {
@@ -1609,132 +3125,169 @@ function renderMyTasks() {
   }
 
   $("myTasksGrid").innerHTML =
-    state.tasks.map(task => {
+    state.tasks
+      .map(task => {
 
-      const completed =
-        task.status === "completed";
+        const completed =
+          task.status ===
+          "completed";
 
-      const accepted =
-        task.status === "accepted";
+        const accepted =
+          task.status ===
+          "accepted";
 
-      let button = "";
+        let button = "";
 
-      if (!completed && !accepted) {
+        if (
+          !completed &&
+          !accepted
+        ) {
 
-        button = `
-          <button
-            class="primary-btn"
-            data-accept-task="${task.id}"
+          button = `
+            <button
+              class="primary-btn"
+              data-accept-task="${task.id}"
+            >
+              Accept Task
+            </button>
+          `;
+
+        } else if (accepted) {
+
+          button = `
+            <button
+              class="success-btn"
+              data-complete-task="${task.id}"
+            >
+              Complete Task
+            </button>
+          `;
+
+        } else {
+
+          button = `
+            <span class="badge success">
+              Completed
+            </span>
+          `;
+        }
+
+        return `
+          <div
+            class="task-card
+              ${completed ? "completed" : ""}"
           >
-            Accept Task
-          </button>
-        `;
-      }
 
-      if (accepted) {
+            <div class="card-top">
 
-        button = `
-          <button
-            class="success-btn"
-            data-complete-task="${task.id}"
-          >
-            Complete Task
-          </button>
-        `;
-      }
+              <div>
 
-      if (completed) {
+                <h3>
+                  ${esc(task.title)}
+                </h3>
 
-        button = `
-          <span class="badge success">
-            Completed
-          </span>
-        `;
-      }
+                <div class="task-description">
+                  ${esc(
+                    task.description ||
+                    "No description."
+                  )}
+                </div>
 
-      return `
-        <div class="task-card ${completed ? "completed" : ""}">
-
-          <div class="card-top">
-
-            <div>
-              <h3>${esc(task.title)}</h3>
-
-              <div class="task-description">
-                ${esc(
-                  task.description ||
-                  "No description."
-                )}
               </div>
+
+              ${statusBadge(
+                task.status ||
+                "pending"
+              )}
+
             </div>
 
-            ${statusBadge(
-              task.status || "pending"
-            )}
+            <div class="card-meta">
+
+              <span class="badge">
+                Assigned
+                ${formatDate(
+                  task.assignedAt
+                )}
+              </span>
+
+              ${
+                task.completionSeconds != null
+                  ? `
+                    <span class="badge">
+                      Time:
+                      ${formatSeconds(
+                        task.completionSeconds
+                      )}
+                    </span>
+                  `
+                  : ""
+              }
+
+            </div>
+
+            <div class="task-card-footer">
+              ${button}
+            </div>
 
           </div>
+        `;
 
-          <div class="card-meta">
-
-            <span class="badge">
-              Assigned ${formatDate(task.assignedAt)}
-            </span>
-
-            ${
-              task.completionSeconds != null
-                ? `<span class="badge">
-                    Time: ${formatSeconds(task.completionSeconds)}
-                  </span>`
-                : ""
-            }
-
-          </div>
-
-          <div class="task-card-footer">
-            ${button}
-          </div>
-
-        </div>
-      `;
-
-    }).join("");
+      }).join("");
 
   document
-    .querySelectorAll("[data-accept-task]")
+    .querySelectorAll(
+      "[data-accept-task]"
+    )
     .forEach(button => {
 
-      button.onclick = () =>
-        acceptTask(button.dataset.acceptTask);
+      button.onclick =
+        () =>
+          acceptTask(
+            button.dataset.acceptTask
+          );
 
     });
 
   document
-    .querySelectorAll("[data-complete-task]")
+    .querySelectorAll(
+      "[data-complete-task]"
+    )
     .forEach(button => {
 
-      button.onclick = () =>
-        completeTask(button.dataset.completeTask);
+      button.onclick =
+        () =>
+          completeTask(
+            button.dataset.completeTask
+          );
 
     });
 }
 
-
-async function acceptTask(taskId) {
+async function acceptTask(id) {
 
   try {
 
     await updateDoc(
-      doc(db, "tasks", taskId),
+      doc(db, "tasks", id),
       {
-        status: "accepted",
-        acceptedAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+        status:
+          "accepted",
+
+        acceptedAt:
+          serverTimestamp(),
+
+        updatedAt:
+          serverTimestamp()
       }
     );
 
-    showToast("Task accepted. Timer started.");
+    showToast(
+      "Task accepted. Timer started."
+    );
 
     await loadAllData();
+
     renderCurrentPage();
 
   } catch (error) {
@@ -1748,12 +3301,11 @@ async function acceptTask(taskId) {
   }
 }
 
-
-async function completeTask(taskId) {
+async function completeTask(id) {
 
   const task =
     state.tasks.find(
-      x => x.id === taskId
+      x => x.id === id
     );
 
   if (!task) return;
@@ -1769,7 +3321,8 @@ async function completeTask(taskId) {
       ? Math.max(
           0,
           Math.floor(
-            (Date.now() - start) / 1000
+            (Date.now() - start) /
+            1000
           )
         )
       : 0;
@@ -1777,12 +3330,19 @@ async function completeTask(taskId) {
   try {
 
     await updateDoc(
-      doc(db, "tasks", taskId),
+      doc(db, "tasks", id),
       {
-        status: "completed",
-        completedAt: serverTimestamp(),
-        completionSeconds: seconds,
-        updatedAt: serverTimestamp()
+        status:
+          "completed",
+
+        completedAt:
+          serverTimestamp(),
+
+        completionSeconds:
+          seconds,
+
+        updatedAt:
+          serverTimestamp()
       }
     );
 
@@ -1791,6 +3351,7 @@ async function completeTask(taskId) {
     );
 
     await loadAllData();
+
     renderCurrentPage();
 
   } catch (error) {
@@ -1804,13 +3365,15 @@ async function completeTask(taskId) {
   }
 }
 
-
 function formatSeconds(seconds) {
 
-  const value = Number(seconds || 0);
+  const value =
+    Number(seconds || 0);
 
   const minutes =
-    Math.floor(value / 60);
+    Math.floor(
+      value / 60
+    );
 
   const remaining =
     value % 60;
@@ -1842,74 +3405,93 @@ function renderAssignments() {
   }
 
   $("assignmentsList").innerHTML =
-    state.assignments.map(item => {
+    state.assignments
+      .map(item => {
 
-      const student =
-        state.students.find(
-          x => x.id === item.studentId
-        );
+        const student =
+          state.students.find(
+            x =>
+              x.id ===
+              item.studentId
+          );
 
-      return `
-        <div class="card">
+        return `
+          <div class="card">
 
-          <div class="card-top">
+            <div class="card-top">
 
-            <div>
-              <h3>${esc(item.title)}</h3>
+              <div>
 
-              <p>
-                ${esc(item.description || "No description.")}
-              </p>
+                <h3>
+                  ${esc(item.title)}
+                </h3>
+
+                <p>
+                  ${esc(
+                    item.description ||
+                    "No description."
+                  )}
+                </p>
+
+              </div>
+
+              ${statusBadge(
+                item.submitted
+                  ? "submitted"
+                  : "pending"
+              )}
+
             </div>
 
-            ${statusBadge(
-              item.submitted
-                ? "submitted"
-                : "pending"
-            )}
+            <div class="card-meta">
+
+              <span class="badge">
+                Student:
+                ${esc(
+                  student?.name ||
+                  "Student"
+                )}
+              </span>
+
+              <span class="badge">
+                Due:
+                ${formatDate(
+                  item.deadline
+                )}
+              </span>
+
+            </div>
+
+            <div class="card-actions">
+
+              <button
+                class="danger-btn"
+                data-delete-assignment="${item.id}"
+              >
+                Delete
+              </button>
+
+            </div>
 
           </div>
+        `;
 
-          <div class="card-meta">
-
-            <span class="badge">
-              Student: ${esc(student?.name || "Student")}
-            </span>
-
-            <span class="badge">
-              Due: ${formatDate(item.deadline)}
-            </span>
-
-          </div>
-
-          <div class="card-actions">
-
-            <button
-              class="danger-btn"
-              data-delete-assignment="${item.id}"
-            >
-              Delete
-            </button>
-
-          </div>
-
-        </div>
-      `;
-
-    }).join("");
+      }).join("");
 
   document
-    .querySelectorAll("[data-delete-assignment]")
+    .querySelectorAll(
+      "[data-delete-assignment]"
+    )
     .forEach(button => {
 
-      button.onclick = () =>
-        deleteAssignment(
-          button.dataset.deleteAssignment
-        );
+      button.onclick =
+        () =>
+          deleteAssignment(
+            button.dataset.deleteAssignment
+          );
 
     });
 }
-
 
 function openAssignmentModal() {
 
@@ -1925,47 +3507,84 @@ function openAssignmentModal() {
 
   openModal(
     "Create Assignment",
+
     `
-      <form id="assignmentForm" class="modal-form">
+      <form
+        id="assignmentForm"
+        class="modal-form"
+      >
 
         <div class="form-group">
+
           <label>
             Student
-            <select id="assignmentStudent" required>
+
+            <select
+              id="assignmentStudent"
+              required
+            >
 
               <option value="">
                 Select student
               </option>
 
-              ${state.students.map(student => `
-                <option value="${student.id}">
-                  ${esc(student.name)}
-                </option>
-              `).join("")}
+              ${state.students.map(
+                student => `
+                  <option
+                    value="${student.id}"
+                  >
+                    ${esc(student.name)}
+                  </option>
+                `
+              ).join("")}
 
             </select>
+
           </label>
+
         </div>
 
         <div class="form-group">
+
           <label>
             Assignment Title
-            <input id="assignmentTitle" required>
+
+            <input
+              id="assignmentTitle"
+              required
+            >
+
           </label>
+
         </div>
 
         <div class="form-group">
+
           <label>
             Description
-            <textarea id="assignmentDescription" rows="4"></textarea>
+
+            <textarea
+              id="assignmentDescription"
+              rows="4"
+            ></textarea>
+
           </label>
+
         </div>
 
         <div class="form-group">
+
           <label>
             Deadline
-            <input id="assignmentDeadline" type="date" required>
+
+            <input
+              id="assignmentDeadline"
+              type="date"
+              required
+            >
+
           </label>
+
         </div>
 
         <div class="modal-actions">
@@ -1998,59 +3617,94 @@ function openAssignmentModal() {
     );
 }
 
-
 async function createAssignment(event) {
 
   event.preventDefault();
 
-  const button = event.submitter;
+  const button =
+    event.submitter;
 
   const studentId =
     $("assignmentStudent")?.value;
 
   const student =
     state.students.find(
-      x => x.id === studentId
+      x =>
+        x.id ===
+        studentId
     );
-
-  if (!student) {
-    showToast("Select a student.", "error");
-    return;
-  }
 
   const deadline =
     $("assignmentDeadline")?.value;
 
+  if (!student) {
+
+    showToast(
+      "Select a student.",
+      "error"
+    );
+
+    return;
+  }
+
   if (!deadline) {
-    showToast("Select a deadline.", "error");
+
+    showToast(
+      "Select a deadline.",
+      "error"
+    );
+
     return;
   }
 
   try {
 
-    setBusy(button, true, "Creating...");
+    setBusy(
+      button,
+      true,
+      "Creating..."
+    );
 
     await addDoc(
-      collection(db, "assignments"),
+      collection(
+        db,
+        "assignments"
+      ),
       {
-        title: clean($("assignmentTitle")?.value),
+
+        title:
+          clean(
+            $("assignmentTitle")?.value
+          ),
 
         description:
-          clean($("assignmentDescription")?.value),
+          clean(
+            $("assignmentDescription")?.value
+          ),
 
         studentId,
 
         adminId:
-          getStudentOwnerAdminId(student),
+          getStudentOwnerAdminId(
+            student
+          ),
 
         deadline,
 
-        submitted: false,
-        submissionDate: null,
-        submittedLate: false,
+        submitted:
+          false,
 
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+        submissionDate:
+          null,
+
+        submittedLate:
+          false,
+
+        createdAt:
+          serverTimestamp(),
+
+        updatedAt:
+          serverTimestamp()
       }
     );
 
@@ -2061,6 +3715,7 @@ async function createAssignment(event) {
     );
 
     await loadAllData();
+
     renderCurrentPage();
 
   } catch (error) {
@@ -2075,24 +3730,39 @@ async function createAssignment(event) {
 
   } finally {
 
-    setBusy(button, false);
+    setBusy(
+      button,
+      false
+    );
   }
 }
 
-
 async function deleteAssignment(id) {
 
-  if (!confirm("Delete this assignment?")) return;
+  if (
+    !confirm(
+      "Delete this assignment?"
+    )
+  ) {
+    return;
+  }
 
   try {
 
     await deleteDoc(
-      doc(db, "assignments", id)
+      doc(
+        db,
+        "assignments",
+        id
+      )
     );
 
-    showToast("Assignment deleted.");
+    showToast(
+      "Assignment deleted."
+    );
 
     await loadAllData();
+
     renderCurrentPage();
 
   } catch (error) {
@@ -2129,78 +3799,101 @@ function renderMyAssignments() {
     <table class="data-table">
 
       <thead>
+
         <tr>
           <th>Assignment</th>
           <th>Deadline</th>
           <th>Status</th>
           <th>Action</th>
         </tr>
+
       </thead>
 
       <tbody>
 
-        ${state.assignments.map(item => {
+        ${state.assignments
+          .map(item => {
 
-          const deadline =
-            new Date(
-              `${item.deadline}T23:59:59`
-            );
+            const deadline =
+              new Date(
+                `${item.deadline}T23:59:59`
+              );
 
-          const late =
-            !item.submitted &&
-            Date.now() > deadline.getTime();
+            const late =
+              !item.submitted &&
+              Date.now() >
+                deadline.getTime();
 
-          let status =
-            item.submitted
-              ? (item.submittedLate
-                  ? "late"
-                  : "submitted")
-              : (late
-                  ? "late"
-                  : "pending");
+            const status =
+              item.submitted
+                ? (
+                    item.submittedLate
+                      ? "late"
+                      : "submitted"
+                  )
+                : (
+                    late
+                      ? "late"
+                      : "pending"
+                  );
 
-          return `
-            <tr>
+            return `
+              <tr>
 
-              <td>
-                <strong>${esc(item.title)}</strong>
-                <br>
-                <small>
-                  ${esc(item.description || "")}
-                </small>
-              </td>
+                <td>
 
-              <td>
-                ${formatDate(item.deadline)}
-              </td>
+                  <strong>
+                    ${esc(item.title)}
+                  </strong>
 
-              <td>
-                ${statusBadge(status)}
-              </td>
+                  <br>
 
-              <td>
+                  <small>
+                    ${esc(
+                      item.description ||
+                      ""
+                    )}
+                  </small>
 
-                ${
-                  item.submitted
-                    ? `<span class="badge success">
-                        Submitted
-                      </span>`
-                    : `
-                      <button
-                        class="primary-btn"
-                        data-submit-assignment="${item.id}"
-                      >
-                        Submit
-                      </button>
-                    `
-                }
+                </td>
 
-              </td>
+                <td>
+                  ${formatDate(
+                    item.deadline
+                  )}
+                </td>
 
-            </tr>
-          `;
+                <td>
+                  ${statusBadge(status)}
+                </td>
 
-        }).join("")}
+                <td>
+
+                  ${
+                    item.submitted
+                      ? `
+                        <span
+                          class="badge success"
+                        >
+                          Submitted
+                        </span>
+                      `
+                      : `
+                        <button
+                          class="primary-btn"
+                          data-submit-assignment="${item.id}"
+                        >
+                          Submit
+                        </button>
+                      `
+                  }
+
+                </td>
+
+              </tr>
+            `;
+
+          }).join("")}
 
       </tbody>
 
@@ -2208,23 +3901,27 @@ function renderMyAssignments() {
   `;
 
   document
-    .querySelectorAll("[data-submit-assignment]")
+    .querySelectorAll(
+      "[data-submit-assignment]"
+    )
     .forEach(button => {
 
-      button.onclick = () =>
-        submitAssignment(
-          button.dataset.submitAssignment
-        );
+      button.onclick =
+        () =>
+          submitAssignment(
+            button.dataset
+              .submitAssignment
+          );
 
     });
 }
-
 
 async function submitAssignment(id) {
 
   const assignment =
     state.assignments.find(
-      x => x.id === id
+      x =>
+        x.id === id
     );
 
   if (!assignment) return;
@@ -2239,7 +3936,8 @@ async function submitAssignment(id) {
     );
 
   const late =
-    Date.now() > deadline.getTime();
+    Date.now() >
+    deadline.getTime();
 
   if (
     !confirm(
@@ -2254,11 +3952,20 @@ async function submitAssignment(id) {
   try {
 
     await updateDoc(
-      doc(db, "assignments", id),
+      doc(
+        db,
+        "assignments",
+        id
+      ),
       {
-        submitted: true,
-        submissionDate: serverTimestamp(),
-        submittedLate: late
+        submitted:
+          true,
+
+        submissionDate:
+          serverTimestamp(),
+
+        submittedLate:
+          late
       }
     );
 
@@ -2269,6 +3976,7 @@ async function submitAssignment(id) {
     );
 
     await loadAllData();
+
     renderCurrentPage();
 
   } catch (error) {
@@ -2302,86 +4010,107 @@ function renderTests() {
   }
 
   $("testsList").innerHTML =
-    state.tests.map(test => {
+    state.tests
+      .map(test => {
 
-      const student =
-        state.students.find(
-          x => x.id === test.studentId
-        );
+        const student =
+          state.students.find(
+            x =>
+              x.id ===
+              test.studentId
+          );
 
-      const marks =
-        Number(test.marks || 0);
+        const marks =
+          Number(
+            test.marks || 0
+          );
 
-      const total =
-        Number(test.totalMarks || 0);
+        const total =
+          Number(
+            test.totalMarks || 0
+          );
 
-      const percent =
-        total > 0
-          ? Math.round(
-              marks / total * 100
-            )
-          : 0;
+        const percent =
+          total > 0
+            ? Math.round(
+                marks /
+                total *
+                100
+              )
+            : 0;
 
-      return `
-        <div class="card">
+        return `
+          <div class="card">
 
-          <div class="card-top">
+            <div class="card-top">
 
-            <div>
-              <h3>${esc(test.title)}</h3>
+              <div>
 
-              <p>
-                Student:
-                ${esc(student?.name || "Student")}
-              </p>
+                <h3>
+                  ${esc(test.title)}
+                </h3>
+
+                <p>
+                  Student:
+                  ${esc(
+                    student?.name ||
+                    "Student"
+                  )}
+                </p>
+
+              </div>
+
+              <span class="badge primary">
+                ${marks}/${total}
+              </span>
+
             </div>
 
-            <span class="badge primary">
-              ${marks}/${total}
-            </span>
+            <div class="card-meta">
+
+              <span class="badge">
+                ${percent}%
+              </span>
+
+              <span class="badge">
+                Date:
+                ${formatDate(
+                  test.testDate
+                )}
+              </span>
+
+            </div>
+
+            <div class="card-actions">
+
+              <button
+                class="danger-btn"
+                data-delete-test="${test.id}"
+              >
+                Delete
+              </button>
+
+            </div>
 
           </div>
+        `;
 
-          <div class="card-meta">
-
-            <span class="badge">
-              ${percent}%
-            </span>
-
-            <span class="badge">
-              Date: ${formatDate(test.testDate)}
-            </span>
-
-          </div>
-
-          <div class="card-actions">
-
-            <button
-              class="danger-btn"
-              data-delete-test="${test.id}"
-            >
-              Delete
-            </button>
-
-          </div>
-
-        </div>
-      `;
-
-    }).join("");
+      }).join("");
 
   document
-    .querySelectorAll("[data-delete-test]")
+    .querySelectorAll(
+      "[data-delete-test]"
+    )
     .forEach(button => {
 
-      button.onclick = () =>
-        deleteTest(
-          button.dataset.deleteTest
-        );
+      button.onclick =
+        () =>
+          deleteTest(
+            button.dataset.deleteTest
+          );
 
     });
 }
-
 
 function openTestModal() {
 
@@ -2397,58 +4126,106 @@ function openTestModal() {
 
   openModal(
     "Add Test Result",
+
     `
-      <form id="testForm" class="modal-form">
+      <form
+        id="testForm"
+        class="modal-form"
+      >
 
         <div class="form-group">
+
           <label>
             Student
-            <select id="testStudent" required>
+
+            <select
+              id="testStudent"
+              required
+            >
 
               <option value="">
                 Select student
               </option>
 
-              ${state.students.map(student => `
-                <option value="${student.id}">
-                  ${esc(student.name)}
-                </option>
-              `).join("")}
+              ${state.students.map(
+                student => `
+                  <option
+                    value="${student.id}"
+                  >
+                    ${esc(student.name)}
+                  </option>
+                `
+              ).join("")}
 
             </select>
+
           </label>
+
         </div>
 
         <div class="form-group">
+
           <label>
             Test Title
-            <input id="testTitle" required>
+
+            <input
+              id="testTitle"
+              required
+            >
+
           </label>
+
         </div>
 
         <div class="form-row">
 
           <div class="form-group">
+
             <label>
               Obtained Marks
-              <input id="testMarks" type="number" min="0" required>
+
+              <input
+                id="testMarks"
+                type="number"
+                min="0"
+                required
+              >
+
             </label>
+
           </div>
 
           <div class="form-group">
+
             <label>
               Total Marks
-              <input id="testTotalMarks" type="number" min="1" required>
+
+              <input
+                id="testTotalMarks"
+                type="number"
+                min="1"
+                required
+              >
+
             </label>
+
           </div>
 
         </div>
 
         <div class="form-group">
+
           <label>
             Test Date
-            <input id="testDate" type="date" required>
+
+            <input
+              id="testDate"
+              type="date"
+              required
+            >
+
           </label>
+
         </div>
 
         <div class="modal-actions">
@@ -2481,29 +4258,40 @@ function openTestModal() {
     );
 }
 
-
 async function createTest(event) {
 
   event.preventDefault();
 
-  const button = event.submitter;
+  const button =
+    event.submitter;
 
   const studentId =
     $("testStudent")?.value;
 
   const student =
     state.students.find(
-      x => x.id === studentId
+      x =>
+        x.id ===
+        studentId
     );
 
   const marks =
-    Number($("testMarks")?.value);
+    Number(
+      $("testMarks")?.value
+    );
 
   const totalMarks =
-    Number($("testTotalMarks")?.value);
+    Number(
+      $("testTotalMarks")?.value
+    );
 
   if (!student) {
-    showToast("Select a student.", "error");
+
+    showToast(
+      "Select a student.",
+      "error"
+    );
+
     return;
   }
 
@@ -2514,34 +4302,49 @@ async function createTest(event) {
     marks < 0 ||
     marks > totalMarks
   ) {
+
     showToast(
       "Enter valid marks.",
       "error"
     );
+
     return;
   }
 
   try {
 
-    setBusy(button, true, "Saving...");
+    setBusy(
+      button,
+      true,
+      "Saving..."
+    );
 
     await addDoc(
       collection(db, "tests"),
       {
-        title: clean($("testTitle")?.value),
+
+        title:
+          clean(
+            $("testTitle")?.value
+          ),
 
         studentId,
 
         adminId:
-          getStudentOwnerAdminId(student),
+          getStudentOwnerAdminId(
+            student
+          ),
 
         marks,
+
         totalMarks,
 
         testDate:
           $("testDate")?.value,
 
-        createdAt: serverTimestamp()
+        createdAt:
+          serverTimestamp()
+
       }
     );
 
@@ -2552,6 +4355,7 @@ async function createTest(event) {
     );
 
     await loadAllData();
+
     renderCurrentPage();
 
   } catch (error) {
@@ -2566,26 +4370,39 @@ async function createTest(event) {
 
   } finally {
 
-    setBusy(button, false);
+    setBusy(
+      button,
+      false
+    );
   }
 }
 
-
 async function deleteTest(id) {
 
-  if (!confirm("Delete this test result?")) {
+  if (
+    !confirm(
+      "Delete this test result?"
+    )
+  ) {
     return;
   }
 
   try {
 
     await deleteDoc(
-      doc(db, "tests", id)
+      doc(
+        db,
+        "tests",
+        id
+      )
     );
 
-    showToast("Test deleted.");
+    showToast(
+      "Test deleted."
+    );
 
     await loadAllData();
+
     renderCurrentPage();
 
   } catch (error) {
@@ -2622,54 +4439,68 @@ function renderMyTests() {
     <table class="data-table">
 
       <thead>
+
         <tr>
           <th>Test</th>
           <th>Date</th>
           <th>Marks</th>
           <th>Percentage</th>
         </tr>
+
       </thead>
 
       <tbody>
 
-        ${state.tests.map(test => {
+        ${state.tests.map(
+          test => {
 
-          const marks =
-            Number(test.marks || 0);
+            const marks =
+              Number(
+                test.marks || 0
+              );
 
-          const total =
-            Number(test.totalMarks || 0);
+            const total =
+              Number(
+                test.totalMarks || 0
+              );
 
-          const percent =
-            total
-              ? Math.round(
-                  marks / total * 100
-                )
-              : 0;
+            const percent =
+              total
+                ? Math.round(
+                    marks /
+                    total *
+                    100
+                  )
+                : 0;
 
-          return `
-            <tr>
+            return `
+              <tr>
 
-              <td>
-                <strong>${esc(test.title)}</strong>
-              </td>
+                <td>
+                  <strong>
+                    ${esc(test.title)}
+                  </strong>
+                </td>
 
-              <td>
-                ${formatDate(test.testDate)}
-              </td>
+                <td>
+                  ${formatDate(
+                    test.testDate
+                  )}
+                </td>
 
-              <td>
-                ${marks}/${total}
-              </td>
+                <td>
+                  ${marks}/${total}
+                </td>
 
-              <td>
-                ${percent}%
-              </td>
+                <td>
+                  ${percent}%
+                </td>
 
-            </tr>
-          `;
+              </tr>
+            `;
 
-        }).join("")}
+          }
+        ).join("")}
 
       </tbody>
 
@@ -2699,41 +4530,102 @@ function renderAdmins() {
     <table class="data-table">
 
       <thead>
+
         <tr>
           <th>Name</th>
           <th>Email</th>
           <th>Status</th>
+          <th>Storage</th>
           <th>Created</th>
         </tr>
+
       </thead>
 
       <tbody>
 
-        ${state.admins.map(admin => `
-          <tr>
+        ${state.admins.map(
+          admin => {
 
-            <td>
-              <strong>${esc(admin.name)}</strong>
-            </td>
+            const allocated =
+              admin._storageAllocatedBytes ||
+              storageAllocationBytes(
+                admin
+              );
 
-            <td>
-              ${esc(admin.email)}
-            </td>
+            const used =
+              admin._storageUsedBytes ||
+              0;
 
-            <td>
-              ${statusBadge(
-                admin.active === false
-                  ? "inactive"
-                  : "active"
-              )}
-            </td>
+            const percent =
+              storagePercent(
+                used,
+                allocated
+              );
 
-            <td>
-              ${formatDate(admin.createdAt)}
-            </td>
+            const status =
+              storageStatus(
+                percent
+              );
 
-          </tr>
-        `).join("")}
+            return `
+              <tr>
+
+                <td>
+                  <strong>
+                    ${esc(admin.name)}
+                  </strong>
+                </td>
+
+                <td>
+                  ${esc(admin.email)}
+                </td>
+
+                <td>
+                  ${statusBadge(
+                    admin.active === false
+                      ? "inactive"
+                      : "active"
+                  )}
+                </td>
+
+                <td>
+
+                  <strong>
+                    ${formatBytes(used)}
+                    /
+                    ${formatBytes(allocated)}
+                  </strong>
+
+                  <div
+                    class="progress-track"
+                    style="margin-top:7px"
+                  >
+
+                    <div
+                      class="progress-fill"
+                      style="width:${percent}%"
+                    ></div>
+
+                  </div>
+
+                  <small>
+                    ${percent}% —
+                    ${esc(status.label)}
+                  </small>
+
+                </td>
+
+                <td>
+                  ${formatDate(
+                    admin.createdAt
+                  )}
+                </td>
+
+              </tr>
+            `;
+
+          }
+        ).join("")}
 
       </tbody>
 
@@ -2746,16 +4638,22 @@ function renderAdmins() {
    PROGRESS
 ========================================================= */
 
-function calculateStudentProgress(studentId) {
+function calculateStudentProgress(
+  studentId
+) {
 
   const tasks =
     state.tasks.filter(
-      x => x.studentId === studentId
+      x =>
+        x.studentId ===
+        studentId
     );
 
   const completedTasks =
     tasks.filter(
-      x => x.status === "completed"
+      x =>
+        x.status ===
+        "completed"
     ).length;
 
   const taskPercent =
@@ -2769,27 +4667,35 @@ function calculateStudentProgress(studentId) {
 
   const tests =
     state.tests.filter(
-      x => x.studentId === studentId
+      x =>
+        x.studentId ===
+        studentId
     );
 
   const marks =
     tests.reduce(
       (sum, x) =>
-        sum + Number(x.marks || 0),
+        sum +
+        Number(x.marks || 0),
       0
     );
 
   const total =
     tests.reduce(
       (sum, x) =>
-        sum + Number(x.totalMarks || 0),
+        sum +
+        Number(
+          x.totalMarks || 0
+        ),
       0
     );
 
   const testPercent =
     total
       ? Math.round(
-          marks / total * 100
+          marks /
+          total *
+          100
         )
       : 0;
 
@@ -2803,7 +4709,6 @@ function calculateStudentProgress(studentId) {
     testPercent
   };
 }
-
 
 function renderProgress() {
 
@@ -2822,6 +4727,7 @@ function renderProgress() {
     <table class="data-table">
 
       <thead>
+
         <tr>
           <th>Student</th>
           <th>Tasks</th>
@@ -2829,55 +4735,74 @@ function renderProgress() {
           <th>Tests</th>
           <th>Test Average</th>
         </tr>
+
       </thead>
 
       <tbody>
 
-        ${state.students.map(student => {
+        ${state.students.map(
+          student => {
 
-          const progress =
-            calculateStudentProgress(
-              student.id
-            );
+            const progress =
+              calculateStudentProgress(
+                student.id
+              );
 
-          return `
-            <tr>
+            return `
+              <tr>
 
-              <td>
-                <strong>${esc(student.name)}</strong>
-                <br>
-                <small>${esc(student.email)}</small>
-              </td>
+                <td>
 
-              <td>
-                ${progress.completedTasks}/${progress.tasks}
-              </td>
+                  <strong>
+                    ${esc(student.name)}
+                  </strong>
 
-              <td>
-                <div class="progress-track">
+                  <br>
+
+                  <small>
+                    ${esc(student.email)}
+                  </small>
+
+                </td>
+
+                <td>
+                  ${progress.completedTasks}
+                  /
+                  ${progress.tasks}
+                </td>
+
+                <td>
+
                   <div
-                    class="progress-fill"
-                    style="width:${progress.taskPercent}%"
-                  ></div>
-                </div>
+                    class="progress-track"
+                  >
 
-                <small>
-                  ${progress.taskPercent}%
-                </small>
-              </td>
+                    <div
+                      class="progress-fill"
+                      style="width:${progress.taskPercent}%"
+                    ></div>
 
-              <td>
-                ${progress.tests}
-              </td>
+                  </div>
 
-              <td>
-                ${progress.testPercent}%
-              </td>
+                  <small>
+                    ${progress.taskPercent}%
+                  </small>
 
-            </tr>
-          `;
+                </td>
 
-        }).join("")}
+                <td>
+                  ${progress.tests}
+                </td>
+
+                <td>
+                  ${progress.testPercent}%
+                </td>
+
+              </tr>
+            `;
+
+          }
+        ).join("")}
 
       </tbody>
 
@@ -2890,36 +4815,55 @@ function renderProgress() {
    MODAL
 ========================================================= */
 
-function openModal(title, html) {
+function openModal(
+  title,
+  html
+) {
 
-  const modal = $("appModal");
+  const modal =
+    $("modal");
 
   if (!modal) return;
 
-  $("modalTitle").textContent = title;
-  $("modalBody").innerHTML = html;
+  $("modalTitle").textContent =
+    title;
 
-  modal.classList.remove("hidden");
+  $("modalBody").innerHTML =
+    html;
+
+  modal.classList.remove(
+    "hidden"
+  );
+
   modal.setAttribute(
     "aria-hidden",
     "false"
   );
 
   document
-    .querySelectorAll("[data-close-modal]")
+    .querySelectorAll(
+      "[data-close-modal]"
+    )
     .forEach(button => {
-      button.onclick = closeModal;
-    });
-}
 
+      button.onclick =
+        closeModal;
+
+    });
+
+  setupPasswordEyes();
+}
 
 function closeModal() {
 
-  const modal = $("appModal");
+  const modal =
+    $("modal");
 
   if (!modal) return;
 
-  modal.classList.add("hidden");
+  modal.classList.add(
+    "hidden"
+  );
 
   modal.setAttribute(
     "aria-hidden",
@@ -2927,7 +4871,8 @@ function closeModal() {
   );
 
   if ($("modalBody")) {
-    $("modalBody").innerHTML = "";
+    $("modalBody").innerHTML =
+      "";
   }
 }
 
@@ -2938,14 +4883,20 @@ function closeModal() {
 
 function openSidebar() {
 
-  $("sidebar")?.classList.add("open");
-  $("sidebarOverlay")?.classList.add("show");
+  $("sidebar")
+    ?.classList.add("open");
+
+  $("sidebarOverlay")
+    ?.classList.add("show");
 }
 
 function closeSidebar() {
 
-  $("sidebar")?.classList.remove("open");
-  $("sidebarOverlay")?.classList.remove("show");
+  $("sidebar")
+    ?.classList.remove("open");
+
+  $("sidebarOverlay")
+    ?.classList.remove("show");
 }
 
 
@@ -2955,7 +4906,9 @@ function closeSidebar() {
 
 function renderCurrentPage() {
 
-  switch (state.currentPage) {
+  switch (
+    state.currentPage
+  ) {
 
     case "dashboard":
       renderDashboard();
@@ -2985,6 +4938,10 @@ function renderCurrentPage() {
       renderProgress();
       break;
 
+    case "files":
+      renderFilesPage();
+      break;
+
     case "myTasks":
       renderMyTasks();
       break;
@@ -3009,25 +4966,37 @@ function setupEvents() {
   $("loginTab")
     ?.addEventListener(
       "click",
-      () => switchAuthTab("login")
+      () =>
+        switchAuthTab(
+          "login"
+        )
     );
 
   $("registerTab")
     ?.addEventListener(
       "click",
-      () => switchAuthTab("register")
+      () =>
+        switchAuthTab(
+          "register"
+        )
     );
 
-  $("loginPanel")
+  $("loginForm")
     ?.addEventListener(
       "submit",
       loginUser
     );
 
-  $("registerPanel")
+  $("registerForm")
     ?.addEventListener(
       "submit",
       registerAdmin
+    );
+
+  $("resendOTPBtn")
+    ?.addEventListener(
+      "click",
+      resendOTP
     );
 
   $("logoutBtn")
@@ -3048,19 +5017,20 @@ function setupEvents() {
       closeSidebar
     );
 
-  $("modalClose")
+  $("closeModal")
     ?.addEventListener(
       "click",
       closeModal
     );
 
-  $("appModal")
+  $("modal")
     ?.addEventListener(
       "click",
       event => {
 
         if (
-          event.target === $("appModal")
+          event.target ===
+          $("modal")
         ) {
           closeModal();
         }
@@ -3069,14 +5039,17 @@ function setupEvents() {
     );
 
   document
-    .querySelectorAll(".nav-item")
+    .querySelectorAll(
+      ".nav-item"
+    )
     .forEach(button => {
 
       button.addEventListener(
         "click",
-        () => showPage(
-          button.dataset.page
-        )
+        () =>
+          showPage(
+            button.dataset.page
+          )
       );
 
     });
@@ -3110,6 +5083,14 @@ function setupEvents() {
       "input",
       renderStudents
     );
+
+  $("uploadFileBtn")
+    ?.addEventListener(
+      "click",
+      uploadStorageFile
+    );
+
+  setupPasswordEyes();
 }
 
 
@@ -3124,13 +5105,20 @@ onAuthStateChanged(
     if (!user) {
 
       state.user = null;
+
       state.profile = null;
 
       state.students = [];
+
       state.admins = [];
+
       state.tasks = [];
+
       state.assignments = [];
+
       state.tests = [];
+
+      state.files = [];
 
       showAuth();
 
@@ -3139,10 +5127,13 @@ onAuthStateChanged(
 
     try {
 
-      state.user = user;
+      state.user =
+        user;
 
       state.profile =
-        await loadProfile(user.uid);
+        await loadProfile(
+          user.uid
+        );
 
       updateUserUI();
 
@@ -3152,13 +5143,17 @@ onAuthStateChanged(
 
       await loadAllData();
 
-      let firstPage = "dashboard";
+      let firstPage =
+        "dashboard";
 
       if (isStudent()) {
-        firstPage = "myTasks";
+        firstPage =
+          "myTasks";
       }
 
-      await showPage(firstPage);
+      await showPage(
+        firstPage
+      );
 
     } catch (error) {
 
@@ -3189,11 +5184,15 @@ document.addEventListener(
     setupEvents();
 
     const version =
-      document.querySelector(".version-text");
+      document.querySelector(
+        ".version-text"
+      );
 
     if (version) {
+
       version.textContent =
         `Version ${VERSION}`;
+
     }
 
   }
