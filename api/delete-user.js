@@ -4,9 +4,7 @@ import {
   cert
 } from "firebase-admin/app";
 
-import {
-  getAuth
-} from "firebase-admin/auth";
+import { getAuth } from "firebase-admin/auth";
 
 import {
   getFirestore
@@ -38,64 +36,32 @@ function getAdminApp() {
 }
 
 
-/*
-  Firestore batch limit is 500.
-
-  We use 400 per batch to keep
-  enough safety margin.
-*/
-
-async function deleteInChunks(
-  db,
-  snapshots
+export default async function handler(
+  req,
+  res
 ) {
 
-  const items = snapshots
-    .filter(Boolean);
-
-  for (
-    let start = 0;
-    start < items.length;
-    start += 400
+  if (
+    req.method !== "POST"
   ) {
-
-    const chunk =
-      items.slice(
-        start,
-        start + 400
-      );
-
-    const batch =
-      db.batch();
-
-    chunk.forEach(snapshot => {
-      batch.delete(snapshot.ref);
-    });
-
-    await batch.commit();
-  }
-}
-
-
-export default async function handler(req, res) {
-
-  if (req.method !== "POST") {
 
     return res.status(405).json({
       success: false,
-      message: "Method not allowed."
+      message:
+        "Method not allowed."
     });
   }
-
 
   try {
 
     const authHeader =
-      req.headers.authorization || "";
-
+      req.headers.authorization ||
+      "";
 
     if (
-      !authHeader.startsWith("Bearer ")
+      !authHeader.startsWith(
+        "Bearer "
+      )
     ) {
 
       return res.status(401).json({
@@ -104,10 +70,6 @@ export default async function handler(req, res) {
           "Authentication required."
       });
     }
-
-
-    const token =
-      authHeader.substring(7);
 
 
     const app =
@@ -120,20 +82,25 @@ export default async function handler(req, res) {
       getFirestore(app);
 
 
+    const token =
+      authHeader.substring(7);
+
     const decoded =
       await adminAuth.verifyIdToken(
         token
       );
 
 
-    const requesterDoc =
+    const requesterSnap =
       await db
         .collection("users")
         .doc(decoded.uid)
         .get();
 
 
-    if (!requesterDoc.exists) {
+    if (
+      !requesterSnap.exists
+    ) {
 
       return res.status(403).json({
         success: false,
@@ -144,12 +111,13 @@ export default async function handler(req, res) {
 
 
     const requester =
-      requesterDoc.data();
+      requesterSnap.data();
 
 
     const studentId =
       String(
-        req.body?.studentId || ""
+        req.body?.studentId ||
+        ""
       ).trim();
 
 
@@ -164,15 +132,18 @@ export default async function handler(req, res) {
 
 
     const studentRef =
-      db.collection("users")
+      db
+        .collection("users")
         .doc(studentId);
 
 
-    const studentDoc =
+    const studentSnap =
       await studentRef.get();
 
 
-    if (!studentDoc.exists) {
+    if (
+      !studentSnap.exists
+    ) {
 
       return res.status(404).json({
         success: false,
@@ -183,10 +154,13 @@ export default async function handler(req, res) {
 
 
     const student =
-      studentDoc.data();
+      studentSnap.data();
 
 
-    if (student.role !== "student") {
+    if (
+      student.role !==
+      "student"
+    ) {
 
       return res.status(400).json({
         success: false,
@@ -197,10 +171,14 @@ export default async function handler(req, res) {
 
 
     const allowed =
-      requester.role === "superadmin" ||
+      requester.role ===
+        "superadmin" ||
+
       (
-        requester.role === "admin" &&
-        student.adminId === requester.uid
+        requester.role ===
+          "admin" &&
+        student.adminId ===
+          requester.uid
       );
 
 
@@ -214,101 +192,93 @@ export default async function handler(req, res) {
     }
 
 
-    /*
-      Find all records belonging
-      to this student.
-    */
-
-    const tasksSnap =
-      await db
-        .collection("tasks")
-        .where(
-          "studentId",
-          "==",
-          studentId
-        )
-        .get();
+    const collections = [
+      "tasks",
+      "assignments",
+      "tests"
+    ];
 
 
-    const assignmentsSnap =
-      await db
-        .collection("assignments")
-        .where(
-          "studentId",
-          "==",
-          studentId
-        )
-        .get();
+    for (
+      const collectionName
+      of collections
+    ) {
+
+      const snap =
+        await db
+          .collection(
+            collectionName
+          )
+          .where(
+            "studentId",
+            "==",
+            studentId
+          )
+          .get();
 
 
-    const testsSnap =
-      await db
-        .collection("tests")
-        .where(
-          "studentId",
-          "==",
-          studentId
-        )
-        .get();
+      let batch =
+        db.batch();
 
+      let count = 0;
 
-    /*
-      Delete authentication account.
-    */
-
-    try {
-
-      await adminAuth.deleteUser(
-        studentId
-      );
-
-    } catch (authError) {
-
-      /*
-        If Firebase Auth user is already
-        gone, continue cleaning Firestore.
-      */
-
-      if (
-        authError.code !==
-        "auth/user-not-found"
+      for (
+        const item
+        of snap.docs
       ) {
-        throw authError;
+
+        batch.delete(
+          item.ref
+        );
+
+        count++;
+
+        if (count === 450) {
+
+          await batch.commit();
+
+          batch =
+            db.batch();
+
+          count = 0;
+        }
+      }
+
+      if (count > 0) {
+        await batch.commit();
       }
     }
 
 
-    /*
-      Delete all related records.
-    */
+    try {
 
-    await deleteInChunks(
-      db,
-      tasksSnap.docs
-    );
+      await adminAuth
+        .deleteUser(
+          studentId
+        );
 
-    await deleteInChunks(
-      db,
-      assignmentsSnap.docs
-    );
+    } catch (error) {
 
-    await deleteInChunks(
-      db,
-      testsSnap.docs
-    );
+      if (
+        error.code !==
+        "auth/user-not-found"
+      ) {
+        throw error;
+      }
+    }
 
-
-    /*
-      Finally delete profile.
-    */
 
     await studentRef.delete();
 
 
     return res.status(200).json({
-      success: true,
+
+      success:
+        true,
+
       message:
         "Student account and related records deleted successfully."
+
     });
 
 
@@ -319,11 +289,15 @@ export default async function handler(req, res) {
       error
     );
 
+    return res.status(500).json({
 
-    return res.status(400).json({
-      success: false,
+      success:
+        false,
+
       message:
+        error.message ||
         "Unable to delete student account."
+
     });
   }
-}
+      }
