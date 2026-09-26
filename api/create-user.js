@@ -4,9 +4,7 @@ import {
   cert
 } from "firebase-admin/app";
 
-import {
-  getAuth
-} from "firebase-admin/auth";
+import { getAuth } from "firebase-admin/auth";
 
 import {
   getFirestore,
@@ -34,42 +32,61 @@ function getAdminApp() {
 
   return initializeApp({
     credential:
-      cert(serviceAccount)
+      cert({
+        projectId:
+          serviceAccount.project_id,
+
+        clientEmail:
+          serviceAccount.client_email,
+
+        privateKey:
+          serviceAccount.private_key.replace(
+            /\\n/g,
+            "\n"
+          )
+      })
   });
 }
 
 
-export default async function handler(req, res) {
+export default async function handler(
+  req,
+  res
+) {
 
-  if (req.method !== "POST") {
+  if (
+    req.method !== "POST"
+  ) {
 
     return res.status(405).json({
       success: false,
-      message: "Method not allowed."
+      message:
+        "Method not allowed."
     });
   }
-
 
   try {
 
     const authHeader =
-      req.headers.authorization || "";
-
+      req.headers.authorization ||
+      "";
 
     if (
-      !authHeader.startsWith("Bearer ")
+      !authHeader.startsWith(
+        "Bearer "
+      )
     ) {
 
       return res.status(401).json({
         success: false,
-        message: "Authentication required."
+        message:
+          "Authentication required."
       });
     }
 
 
-    const idToken =
+    const token =
       authHeader.substring(7);
-
 
     const app =
       getAdminApp();
@@ -81,20 +98,22 @@ export default async function handler(req, res) {
       getFirestore(app);
 
 
-    const decodedToken =
+    const decoded =
       await adminAuth.verifyIdToken(
-        idToken
+        token
       );
 
 
-    const requesterDoc =
+    const requesterSnap =
       await db
         .collection("users")
-        .doc(decodedToken.uid)
+        .doc(decoded.uid)
         .get();
 
 
-    if (!requesterDoc.exists) {
+    if (
+      !requesterSnap.exists
+    ) {
 
       return res.status(403).json({
         success: false,
@@ -105,7 +124,7 @@ export default async function handler(req, res) {
 
 
     const requester =
-      requesterDoc.data();
+      requesterSnap.data();
 
 
     if (
@@ -121,35 +140,38 @@ export default async function handler(req, res) {
     }
 
 
-    const {
-      name,
-      email,
-      password,
-      age,
-      className,
-      adminId
-    } = req.body || {};
+    const name =
+      String(
+        req.body?.name || ""
+      ).trim();
 
+    const email =
+      String(
+        req.body?.email || ""
+      )
+      .trim()
+      .toLowerCase();
 
-    const cleanName =
-      String(name || "").trim();
+    const password =
+      String(
+        req.body?.password || ""
+      );
 
-    const cleanEmail =
-      String(email || "")
-        .trim()
-        .toLowerCase();
+    const className =
+      String(
+        req.body?.className || ""
+      ).trim();
 
-    const cleanPassword =
-      String(password || "");
-
-    const cleanClass =
-      String(className || "").trim();
+    const requestedAdminId =
+      String(
+        req.body?.adminId || ""
+      ).trim();
 
 
     if (
-      !cleanName ||
-      !cleanEmail ||
-      !cleanPassword
+      !name ||
+      !email ||
+      !password
     ) {
 
       return res.status(400).json({
@@ -160,17 +182,9 @@ export default async function handler(req, res) {
     }
 
 
-    if (cleanName.length < 2) {
-
-      return res.status(400).json({
-        success: false,
-        message:
-          "Please enter a valid student name."
-      });
-    }
-
-
-    if (cleanPassword.length < 6) {
+    if (
+      password.length < 6
+    ) {
 
       return res.status(400).json({
         success: false,
@@ -180,21 +194,24 @@ export default async function handler(req, res) {
     }
 
 
-    let cleanAge = null;
+    let age = null;
 
 
     if (
-      age !== "" &&
-      age !== null &&
-      age !== undefined
+      req.body?.age !== "" &&
+      req.body?.age !== null &&
+      req.body?.age !== undefined
     ) {
 
       const parsedAge =
-        Number(age);
-
+        Number(
+          req.body.age
+        );
 
       if (
-        !Number.isInteger(parsedAge) ||
+        !Number.isInteger(
+          parsedAge
+        ) ||
         parsedAge < 3 ||
         parsedAge > 100
       ) {
@@ -206,80 +223,49 @@ export default async function handler(req, res) {
         });
       }
 
-
-      cleanAge = parsedAge;
+      age =
+        parsedAge;
     }
 
 
-    /*
-      IMPORTANT SECURITY RULE:
-
-      Admin can only create students
-      under himself.
-
-      Super Admin may select a valid Admin.
-    */
-
-    let assignedAdminId = null;
+    let assignedAdminId =
+      null;
 
 
-    if (requester.role === "admin") {
+    if (
+      requester.role ===
+      "admin"
+    ) {
 
       assignedAdminId =
         requester.uid;
 
     } else {
 
-      const requestedAdminId =
-        String(adminId || "").trim();
+      if (
+        requestedAdminId
+      ) {
 
-
-      if (requestedAdminId) {
-
-        const adminDoc =
+        const adminSnap =
           await db
             .collection("users")
-            .doc(requestedAdminId)
+            .doc(
+              requestedAdminId
+            )
             .get();
 
-
-        if (!adminDoc.exists) {
-
-          return res.status(400).json({
-            success: false,
-            message:
-              "Selected admin was not found."
-          });
-        }
-
-
-        const selectedAdmin =
-          adminDoc.data();
-
-
         if (
-          selectedAdmin.role !== "admin"
+          !adminSnap.exists ||
+          adminSnap.data().role !==
+            "admin"
         ) {
 
           return res.status(400).json({
             success: false,
             message:
-              "Selected user is not an admin."
+              "Selected Admin was not found."
           });
         }
-
-
-        if (
-          selectedAdmin.active === false
-        ) {
-
-          return res.status(400).json({
-            success: false,
-            message:
-              "Selected admin is inactive."
-          });
-        }
-
 
         assignedAdminId =
           requestedAdminId;
@@ -287,12 +273,38 @@ export default async function handler(req, res) {
     }
 
 
-    const student =
-      await adminAuth.createUser({
-        email: cleanEmail,
-        password: cleanPassword,
-        displayName: cleanName
-      });
+    let student;
+
+    try {
+
+      student =
+        await adminAuth.createUser({
+
+          email,
+
+          password,
+
+          displayName:
+            name
+
+        });
+
+    } catch (error) {
+
+      if (
+        error.code ===
+        "auth/email-already-exists"
+      ) {
+
+        return res.status(400).json({
+          success: false,
+          message:
+            "This email is already registered."
+        });
+      }
+
+      throw error;
+    }
 
 
     try {
@@ -301,41 +313,58 @@ export default async function handler(req, res) {
         .collection("users")
         .doc(student.uid)
         .set({
-          uid: student.uid,
-          name: cleanName,
-          email: cleanEmail,
-          age: cleanAge,
-          className:
-            cleanClass || null,
 
-          role: "student",
+          uid:
+            student.uid,
+
+          name,
+
+          email,
+
+          age,
+
+          className:
+            className ||
+            null,
+
+          role:
+            "student",
 
           adminId:
             assignedAdminId,
 
-          active: true,
+          active:
+            true,
 
           createdAt:
             FieldValue.serverTimestamp()
+
         });
 
-    } catch (firestoreError) {
+    } catch (error) {
 
       try {
-        await adminAuth.deleteUser(
-          student.uid
-        );
-      } catch (_) {}
+        await adminAuth
+          .deleteUser(
+            student.uid
+          );
+      } catch {}
 
-      throw firestoreError;
+      throw error;
     }
 
 
     return res.status(201).json({
-      success: true,
+
+      success:
+        true,
+
       message:
         "Student account created successfully.",
-      uid: student.uid
+
+      uid:
+        student.uid
+
     });
 
 
@@ -346,41 +375,15 @@ export default async function handler(req, res) {
       error
     );
 
+    return res.status(500).json({
 
-    let message =
-      "Unable to create student account.";
+      success:
+        false,
 
+      message:
+        error.message ||
+        "Unable to create student account."
 
-    if (
-      error.code ===
-      "auth/email-already-exists"
-    ) {
-      message =
-        "This email is already registered.";
-    }
-
-
-    if (
-      error.code ===
-      "auth/invalid-email"
-    ) {
-      message =
-        "Please enter a valid email address.";
-    }
-
-
-    if (
-      error.code ===
-      "auth/weak-password"
-    ) {
-      message =
-        "Password is too weak.";
-    }
-
-
-    return res.status(400).json({
-      success: false,
-      message
     });
   }
 }
