@@ -4,9 +4,7 @@ import {
   cert
 } from "firebase-admin/app";
 
-import {
-  getAuth
-} from "firebase-admin/auth";
+import { getAuth } from "firebase-admin/auth";
 
 import {
   getFirestore,
@@ -20,21 +18,43 @@ function getAdminApp() {
     return getApps()[0];
   }
 
-  const rawKey =
-    process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+  const rawKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
 
   if (!rawKey) {
     throw new Error(
-      "Firebase service account is not configured."
+      "FIREBASE_SERVICE_ACCOUNT_KEY is missing in Vercel."
     );
   }
 
-  const serviceAccount =
-    JSON.parse(rawKey);
+  let serviceAccount;
+
+  try {
+    serviceAccount = JSON.parse(rawKey);
+  } catch (error) {
+    throw new Error(
+      "FIREBASE_SERVICE_ACCOUNT_KEY is not valid JSON."
+    );
+  }
+
+  if (
+    !serviceAccount.project_id ||
+    !serviceAccount.client_email ||
+    !serviceAccount.private_key
+  ) {
+    throw new Error(
+      "Firebase service account JSON is incomplete."
+    );
+  }
 
   return initializeApp({
-    credential:
-      cert(serviceAccount)
+    credential: cert({
+      projectId: serviceAccount.project_id,
+      clientEmail: serviceAccount.client_email,
+      privateKey: serviceAccount.private_key.replace(
+        /\\n/g,
+        "\n"
+      )
+    })
   });
 }
 
@@ -42,7 +62,6 @@ function getAdminApp() {
 export default async function handler(req, res) {
 
   if (req.method !== "POST") {
-
     return res.status(405).json({
       success: false,
       message: "Method not allowed."
@@ -61,20 +80,13 @@ export default async function handler(req, res) {
       String(name || "").trim();
 
     const cleanEmail =
-      String(email || "")
-        .trim()
-        .toLowerCase();
+      String(email || "").trim().toLowerCase();
 
     const cleanPassword =
       String(password || "");
 
 
-    if (
-      !cleanName ||
-      !cleanEmail ||
-      !cleanPassword
-    ) {
-
+    if (!cleanName || !cleanEmail || !cleanPassword) {
       return res.status(400).json({
         success: false,
         message:
@@ -84,7 +96,6 @@ export default async function handler(req, res) {
 
 
     if (cleanName.length < 2) {
-
       return res.status(400).json({
         success: false,
         message:
@@ -94,7 +105,6 @@ export default async function handler(req, res) {
 
 
     if (cleanPassword.length < 6) {
-
       return res.status(400).json({
         success: false,
         message:
@@ -103,15 +113,14 @@ export default async function handler(req, res) {
     }
 
 
+    // Firebase Admin SDK
     const app = getAdminApp();
 
-    const adminAuth =
-      getAuth(app);
-
-    const db =
-      getFirestore(app);
+    const adminAuth = getAuth(app);
+    const db = getFirestore(app);
 
 
+    // Create Firebase Authentication account
     const user =
       await adminAuth.createUser({
         email: cleanEmail,
@@ -120,35 +129,34 @@ export default async function handler(req, res) {
       });
 
 
-    try {
+    // Create Firestore profile
+    await db
+      .collection("users")
+      .doc(user.uid)
+      .set({
 
-      await db
-        .collection("users")
-        .doc(user.uid)
-        .set({
-          uid: user.uid,
-          name: cleanName,
-          email: cleanEmail,
-          role: "admin",
-          active: true,
-          createdAt:
-            FieldValue.serverTimestamp()
-        });
+        uid: user.uid,
 
-    } catch (firestoreError) {
+        name: cleanName,
 
-      try {
-        await adminAuth.deleteUser(user.uid);
-      } catch (_) {}
+        email: cleanEmail,
 
-      throw firestoreError;
-    }
+        role: "admin",
+
+        active: true,
+
+        createdAt:
+          FieldValue.serverTimestamp()
+      });
 
 
     return res.status(201).json({
+
       success: true,
+
       message:
         "Admin account created successfully.",
+
       uid: user.uid
     });
 
@@ -160,16 +168,18 @@ export default async function handler(req, res) {
       error
     );
 
-    let message =
-      "Unable to create admin account.";
 
+    // Known Firebase Auth errors
 
     if (
       error.code ===
       "auth/email-already-exists"
     ) {
-      message =
-        "This email is already registered.";
+      return res.status(400).json({
+        success: false,
+        message:
+          "This email is already registered."
+      });
     }
 
 
@@ -177,8 +187,11 @@ export default async function handler(req, res) {
       error.code ===
       "auth/invalid-email"
     ) {
-      message =
-        "Please enter a valid email address.";
+      return res.status(400).json({
+        success: false,
+        message:
+          "Please enter a valid email address."
+      });
     }
 
 
@@ -186,14 +199,70 @@ export default async function handler(req, res) {
       error.code ===
       "auth/weak-password"
     ) {
-      message =
-        "Password is too weak.";
+      return res.status(400).json({
+        success: false,
+        message:
+          "Password must contain at least 6 characters."
+      });
     }
 
 
-    return res.status(400).json({
+    // Configuration problems
+
+    if (
+      error.message?.includes(
+        "FIREBASE_SERVICE_ACCOUNT_KEY is missing"
+      )
+    ) {
+      return res.status(500).json({
+        success: false,
+        message:
+          "Firebase server configuration is missing. Check Vercel Environment Variables."
+      });
+    }
+
+
+    if (
+      error.message?.includes(
+        "not valid JSON"
+      )
+    ) {
+      return res.status(500).json({
+        success: false,
+        message:
+          "Firebase server configuration is invalid. Check FIREBASE_SERVICE_ACCOUNT_KEY."
+      });
+    }
+
+
+    if (
+      error.message?.includes(
+        "service account JSON is incomplete"
+      )
+    ) {
+      return res.status(500).json({
+        success: false,
+        message:
+          "Firebase service account configuration is incomplete."
+      });
+    }
+
+
+    // Temporary diagnostic response
+    return res.status(500).json({
+
       success: false,
-      message
+
+      message:
+        "Unable to create admin account.",
+
+      errorCode:
+        error.code || "UNKNOWN_ERROR",
+
+      errorMessage:
+        error.message ||
+        "Unknown server error."
     });
+
   }
-}
+      }
