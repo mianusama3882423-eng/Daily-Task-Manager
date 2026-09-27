@@ -384,36 +384,26 @@ function showApp() {
 
 
 function switchAuthTab(type) {
+  const isLogin = type === "login";
 
-  const login =
-    type === "login";
+  // Buttons
+  loginTab.classList.toggle("active", isLogin);
+  registerTab.classList.toggle("active", !isLogin);
 
-  $("loginTab")
-    ?.classList.toggle(
-      "active",
-      login
-    );
+  // Panels — inline style ko bhi override karega
+  if (loginPanel) {
+    loginPanel.style.display = isLogin ? "block" : "none";
+  }
 
-  $("registerTab")
-    ?.classList.toggle(
-      "active",
-      !login
-    );
+  if (registerPanel) {
+    registerPanel.style.display = isLogin ? "none" : "block";
+  }
 
-  $("loginPanel")
-    ?.classList.toggle(
-      "hidden",
-      !login
-    );
-
-  $("registerPanel")
-    ?.classList.toggle(
-      "hidden",
-      login
-    );
-
-}
-
+  // OTP area initially hide
+  if (registerOtpArea && isLogin) {
+    registerOtpArea.style.display = "none";
+  }
+    }
 
 /* =========================================================
    PASSWORD EYE
