@@ -1,20 +1,10 @@
 // ============================================================
 // DAILY TASK MANAGER
-// API: Register Admin
-// Version 3.0.0
-//
-// Features:
-// - 6-digit email OTP
-// - Resend cooldown
-// - OTP expiry
-// - Maximum verification attempts
-// - Hashed OTP storage
-// - Firebase Auth admin creation
-// - Firestore admin profile creation
-// - No Firebase Storage required
+// Admin Registration + Email OTP
+// Version 3.1.0
 // ============================================================
 
-import crypto from "crypto";
+import crypto from "node:crypto";
 
 import {
   getApps,
@@ -32,9 +22,9 @@ import {
 } from "firebase-admin/firestore";
 
 
-/* =========================================================
-   FIREBASE ADMIN INITIALIZATION
-========================================================= */
+// ============================================================
+// FIREBASE ADMIN
+// ============================================================
 
 function getAdminApp() {
 
@@ -42,22 +32,16 @@ function getAdminApp() {
     return getApps()[0];
   }
 
-
   const rawKey =
     process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
 
-
   if (!rawKey) {
-
     throw new Error(
       "FIREBASE_SERVICE_ACCOUNT_KEY is missing in Vercel."
     );
-
   }
 
-
   let serviceAccount;
-
 
   try {
 
@@ -72,7 +56,6 @@ function getAdminApp() {
 
   }
 
-
   if (
     !serviceAccount.project_id ||
     !serviceAccount.client_email ||
@@ -84,7 +67,6 @@ function getAdminApp() {
     );
 
   }
-
 
   return initializeApp({
 
@@ -98,10 +80,8 @@ function getAdminApp() {
           serviceAccount.client_email,
 
         privateKey:
-          serviceAccount.private_key.replace(
-            /\\n/g,
-            "\n"
-          )
+          serviceAccount.private_key
+            .replace(/\\n/g, "\n")
 
       })
 
@@ -110,23 +90,9 @@ function getAdminApp() {
 }
 
 
-/* =========================================================
-   CONSTANTS
-========================================================= */
-
-const OTP_EXPIRY_MS =
-  10 * 60 * 1000;
-
-const RESEND_COOLDOWN_MS =
-  30 * 1000;
-
-const MAX_ATTEMPTS =
-  5;
-
-
-/* =========================================================
-   HELPERS
-========================================================= */
+// ============================================================
+// HELPERS
+// ============================================================
 
 function clean(value) {
 
@@ -137,37 +103,18 @@ function clean(value) {
 }
 
 
-function normalizeEmail(email) {
+function normalizeEmail(value) {
 
-  return clean(email)
+  return clean(value)
     .toLowerCase();
 
 }
 
 
-function isValidEmail(email) {
+function emailIsValid(email) {
 
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     .test(email);
-
-}
-
-
-function hashValue(value) {
-
-  const secret =
-    process.env.OTP_HASH_SECRET ||
-    process.env.FIREBASE_SERVICE_ACCOUNT_KEY ||
-    "daily-task-manager-otp-secret";
-
-
-  return crypto
-    .createHmac(
-      "sha256",
-      secret
-    )
-    .update(String(value))
-    .digest("hex");
 
 }
 
@@ -184,107 +131,72 @@ function generateOTP() {
 }
 
 
-function safeCompare(
-  value1,
-  value2
-) {
+function hashValue(value) {
 
-  const a =
+  const secret =
+    process.env.OTP_HASH_SECRET ||
+    process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+
+  return crypto
+    .createHmac(
+      "sha256",
+      secret
+    )
+    .update(value)
+    .digest("hex");
+
+}
+
+
+function emailDocumentId(email) {
+
+  return crypto
+    .createHash("sha256")
+    .update(email)
+    .digest("hex");
+
+}
+
+
+function safeEqual(a, b) {
+
+  const first =
     Buffer.from(
-      String(value1),
+      String(a),
       "utf8"
     );
 
-  const b =
+  const second =
     Buffer.from(
-      String(value2),
+      String(b),
       "utf8"
     );
-
 
   if (
-    a.length !==
-    b.length
+    first.length !==
+    second.length
   ) {
 
     return false;
 
   }
 
-
   return crypto.timingSafeEqual(
-    a,
-    b
+    first,
+    second
   );
 
 }
 
 
-function validateRegistrationData(
-  name,
-  email,
-  password
-) {
-
-  if (
-    !name ||
-    !email ||
-    !password
-  ) {
-
-    return (
-      "Name, email and password are required."
-    );
-
-  }
-
-
-  if (
-    name.length < 2
-  ) {
-
-    return (
-      "Please enter a valid name."
-    );
-
-  }
-
-
-  if (
-    !isValidEmail(email)
-  ) {
-
-    return (
-      "Please enter a valid email address."
-    );
-
-  }
-
-
-  if (
-    password.length < 6
-  ) {
-
-    return (
-      "Password must contain at least 6 characters."
-    );
-
-  }
-
-
-  return null;
-
-}
-
-
-/* =========================================================
-   SEND EMAIL THROUGH RESEND
-========================================================= */
+// ============================================================
+// SEND OTP EMAIL
+// ============================================================
 
 async function sendOTPEmail(
   email,
   name,
-  otp
+  code
 ) {
 
   const apiKey =
@@ -293,7 +205,6 @@ async function sendOTPEmail(
   const fromEmail =
     process.env.RESEND_FROM_EMAIL;
 
-
   if (!apiKey) {
 
     throw new Error(
@@ -301,7 +212,6 @@ async function sendOTPEmail(
     );
 
   }
-
 
   if (!fromEmail) {
 
@@ -317,11 +227,12 @@ async function sendOTPEmail(
       "https://api.resend.com/emails",
       {
 
-        method: "POST",
+        method:
+          "POST",
 
         headers: {
 
-          "Authorization":
+          Authorization:
             `Bearer ${apiKey}`,
 
           "Content-Type":
@@ -342,19 +253,18 @@ async function sendOTPEmail(
               "Daily Task Manager - Email Verification Code",
 
             html: `
+
               <!DOCTYPE html>
 
               <html>
 
               <head>
 
-                <meta
-                  charset="UTF-8"
-                >
+                <meta charset="UTF-8">
 
                 <meta
                   name="viewport"
-                  content="width=device-width, initial-scale=1.0"
+                  content="width=device-width,initial-scale=1"
                 >
 
               </head>
@@ -363,7 +273,7 @@ async function sendOTPEmail(
                 style="
                   margin:0;
                   padding:0;
-                  background:#f4f5fb;
+                  background:#f4f7fb;
                   font-family:Arial,sans-serif;
                 "
               >
@@ -373,164 +283,165 @@ async function sendOTPEmail(
                     max-width:520px;
                     margin:40px auto;
                     background:#ffffff;
-                    border-radius:16px;
-                    padding:30px;
-                    box-shadow:0 8px 30px rgba(0,0,0,.08);
+                    border-radius:20px;
+                    overflow:hidden;
+                    box-shadow:0 10px 35px rgba(0,0,0,.08);
                   "
                 >
 
-                  <h2
-                    style="
-                      margin-top:0;
-                      color:#5b54d9;
-                    "
-                  >
-                    Daily Task Manager
-                  </h2>
-
-                  <p>
-                    Hello
-                    <strong>
-                      ${escapeHtml(name)}
-                    </strong>,
-                  </p>
-
-                  <p>
-                    Your email verification code is:
-                  </p>
-
                   <div
                     style="
-                      margin:25px 0;
-                      padding:18px;
+                      background:linear-gradient(
+                        135deg,
+                        #4f46e5,
+                        #7c3aed
+                      );
+                      padding:30px;
+                      color:white;
                       text-align:center;
-                      background:#f0efff;
-                      border-radius:12px;
                     "
                   >
 
-                    <span
+                    <h1
                       style="
-                        font-size:34px;
-                        font-weight:bold;
-                        letter-spacing:8px;
-                        color:#5149d8;
+                        margin:0;
+                        font-size:25px;
                       "
                     >
-                      ${otp}
-                    </span>
+                      Daily Task Manager
+                    </h1>
+
+                    <p
+                      style="
+                        margin:8px 0 0;
+                        opacity:.9;
+                      "
+                    >
+                      Email Verification
+                    </p>
 
                   </div>
 
-                  <p>
-                    This code will expire in
-                    <strong>
-                      10 minutes
-                    </strong>.
-                  </p>
 
-                  <p
+                  <div
                     style="
-                      color:#777;
-                      font-size:13px;
+                      padding:35px 28px;
+                      text-align:center;
                     "
                   >
-                    If you did not request this code,
-                    you can safely ignore this email.
-                  </p>
+
+                    <p
+                      style="
+                        font-size:17px;
+                        color:#1f2937;
+                      "
+                    >
+                      Hello ${name},
+                    </p>
+
+                    <p
+                      style="
+                        color:#6b7280;
+                        line-height:1.6;
+                      "
+                    >
+                      Use the verification code below
+                      to complete your administrator
+                      registration.
+                    </p>
+
+
+                    <div
+                      style="
+                        margin:28px 0;
+                        padding:20px;
+                        background:#f3f4ff;
+                        border-radius:14px;
+                      "
+                    >
+
+                      <div
+                        style="
+                          font-size:36px;
+                          font-weight:800;
+                          letter-spacing:9px;
+                          color:#4f46e5;
+                        "
+                      >
+                        ${code}
+                      </div>
+
+                    </div>
+
+
+                    <p
+                      style="
+                        color:#6b7280;
+                        font-size:14px;
+                      "
+                    >
+                      This code expires in
+                      <strong>10 minutes</strong>.
+                    </p>
+
+                    <p
+                      style="
+                        color:#9ca3af;
+                        font-size:12px;
+                        margin-top:28px;
+                      "
+                    >
+                      If you did not request this
+                      verification code, you can
+                      safely ignore this email.
+                    </p>
+
+                  </div>
 
                 </div>
 
               </body>
 
               </html>
+
             `
 
           })
 
-      }
-    );
+      });
 
 
-  let data = {};
-
-  try {
-
-    data =
-      await response.json();
-
-  } catch {
-
-    data = {};
-
-  }
+  const result =
+    await response.json();
 
 
   if (!response.ok) {
 
     console.error(
       "RESEND ERROR:",
-      data
+      result
     );
 
-
     throw new Error(
-      data?.message ||
+      result?.message ||
+      result?.error ||
       "Unable to send verification email."
     );
 
   }
 
-
-  return data;
-
-}
-
-
-/* =========================================================
-   HTML ESCAPE
-========================================================= */
-
-function escapeHtml(
-  value
-) {
-
-  return String(
-    value ?? ""
-  )
-    .replaceAll(
-      "&",
-      "&amp;"
-    )
-    .replaceAll(
-      "<",
-      "&lt;"
-    )
-    .replaceAll(
-      ">",
-      "&gt;"
-    )
-    .replaceAll(
-      '"',
-      "&quot;"
-    )
-    .replaceAll(
-      "'",
-      "&#039;"
-    );
+  return result;
 
 }
 
 
-/* =========================================================
-   SEND OTP
-========================================================= */
+// ============================================================
+// SEND CODE
+// ============================================================
 
 async function sendCode(
   req,
-  res,
-  db,
-  adminAuth
+  res
 ) {
 
   const {
@@ -548,59 +459,88 @@ async function sendCode(
     normalizeEmail(email);
 
   const cleanPassword =
-    String(
-      password || ""
-    );
+    String(password || "");
 
 
-  const validationError =
-    validateRegistrationData(
-      cleanName,
-      cleanEmail,
-      cleanPassword
-    );
-
-
-  if (validationError) {
+  if (
+    !cleanName ||
+    !cleanEmail ||
+    !cleanPassword
+  ) {
 
     return res.status(400).json({
 
-      success:
-        false,
+      success:false,
 
       message:
-        validationError
+        "Name, email and password are required."
 
     });
 
   }
 
-
-  /* ---------------------------------------------------------
-     CHECK ENVIRONMENT
-  --------------------------------------------------------- */
 
   if (
-    !process.env.RESEND_API_KEY ||
-    !process.env.RESEND_FROM_EMAIL
+    cleanName.length < 2
   ) {
 
-    return res.status(500).json({
+    return res.status(400).json({
 
-      success:
-        false,
+      success:false,
 
       message:
-        "Email verification is not configured. Check RESEND_API_KEY and RESEND_FROM_EMAIL in Vercel."
+        "Please enter a valid name."
 
     });
 
   }
 
 
-  /* ---------------------------------------------------------
-     CHECK EXISTING FIREBASE USER
-  --------------------------------------------------------- */
+  if (
+    !emailIsValid(cleanEmail)
+  ) {
+
+    return res.status(400).json({
+
+      success:false,
+
+      message:
+        "Please enter a valid email address."
+
+    });
+
+  }
+
+
+  if (
+    cleanPassword.length < 6
+  ) {
+
+    return res.status(400).json({
+
+      success:false,
+
+      message:
+        "Password must contain at least 6 characters."
+
+    });
+
+  }
+
+
+  const app =
+    getAdminApp();
+
+  const adminAuth =
+    getAuth(app);
+
+  const db =
+    getFirestore(app);
+
+
+  // ----------------------------------------------------------
+  // CHECK EXISTING AUTH USER
+  // ----------------------------------------------------------
 
   try {
 
@@ -609,11 +549,9 @@ async function sendCode(
         cleanEmail
       );
 
-
     return res.status(400).json({
 
-      success:
-        false,
+      success:false,
 
       message:
         "This email is already registered."
@@ -627,91 +565,66 @@ async function sendCode(
       "auth/user-not-found"
     ) {
 
-      console.error(
-        "CHECK USER ERROR:",
-        error
-      );
-
-
-      return res.status(500).json({
-
-        success:
-          false,
-
-        message:
-          "Unable to check email registration."
-
-      });
+      throw error;
 
     }
 
   }
 
 
-  /* ---------------------------------------------------------
-     OTP DOCUMENT
-  --------------------------------------------------------- */
-
-  const emailKey =
-    hashValue(
+  const otpDocId =
+    emailDocumentId(
       cleanEmail
     );
-
 
   const otpRef =
     db
       .collection(
         "adminRegistrationOtps"
       )
-      .doc(emailKey);
+      .doc(otpDocId);
 
 
   const existing =
     await otpRef.get();
 
 
+  const now =
+    Date.now();
+
+
   if (existing.exists) {
 
-    const oldData =
+    const old =
       existing.data();
-
 
     const sentAt =
       Number(
-        oldData?.sentAtMs ||
-        0
+        old?.sentAtMs || 0
+      );
+
+    const secondsPassed =
+      Math.floor(
+        (now - sentAt) /
+        1000
       );
 
 
-    const elapsed =
-      Date.now() -
-      sentAt;
-
-
     if (
-      elapsed <
-      RESEND_COOLDOWN_MS
+      secondsPassed < 30
     ) {
-
-      const remaining =
-        Math.ceil(
-          (
-            RESEND_COOLDOWN_MS -
-            elapsed
-          ) / 1000
-        );
-
 
       return res.status(429).json({
 
-        success:
-          false,
+        success:false,
 
         message:
-          `Please wait ${remaining} seconds before requesting another code.`,
+          `Please wait ${
+            30 - secondsPassed
+          } seconds before requesting another code.`,
 
         resendAfterSeconds:
-          remaining
+          30 - secondsPassed
 
       });
 
@@ -720,35 +633,15 @@ async function sendCode(
   }
 
 
-  /* ---------------------------------------------------------
-     GENERATE OTP
-  --------------------------------------------------------- */
-
-  const otp =
+  const code =
     generateOTP();
 
 
   const otpHash =
     hashValue(
-      otp
+      code
     );
 
-
-  const now =
-    Date.now();
-
-
-  const expiresAtMs =
-    now +
-    OTP_EXPIRY_MS;
-
-
-  /* ---------------------------------------------------------
-     SAVE OTP
-     
-     IMPORTANT:
-     Password is NOT stored.
-  --------------------------------------------------------- */
 
   await otpRef.set({
 
@@ -760,92 +653,64 @@ async function sendCode(
 
     otpHash,
 
+    expiresAtMs:
+      now +
+      10 * 60 * 1000,
+
     sentAtMs:
       now,
-
-    expiresAtMs,
 
     attempts:
       0,
 
-    used:
-      false
+    createdAtMs:
+      now
 
   });
 
-
-  /* ---------------------------------------------------------
-     SEND EMAIL
-  --------------------------------------------------------- */
 
   try {
 
     await sendOTPEmail(
       cleanEmail,
       cleanName,
-      otp
+      code
     );
-
 
   } catch (error) {
 
-    console.error(
-      "SEND OTP EMAIL ERROR:",
-      error
-    );
-
-
     await otpRef.delete();
 
-
-    return res.status(500).json({
-
-      success:
-        false,
-
-      message:
-        error.message ||
-        "Unable to send verification email."
-
-    });
+    throw error;
 
   }
 
 
   return res.status(200).json({
 
-    success:
-      true,
+    success:true,
 
     message:
-      "Verification code sent successfully.",
+      "Verification code sent to your email.",
 
     expiresInSeconds:
-      Math.floor(
-        OTP_EXPIRY_MS /
-        1000
-      ),
+      600,
 
     resendAfterSeconds:
-      Math.floor(
-        RESEND_COOLDOWN_MS /
-        1000
-      )
+      30
 
   });
 
 }
 
 
-/* =========================================================
-   VERIFY OTP
-========================================================= */
+// ============================================================
+// VERIFY CODE
+// ============================================================
 
 async function verifyCode(
   req,
-  res,
-  db,
-  adminAuth
+  res
 ) {
 
   const {
@@ -864,31 +729,25 @@ async function verifyCode(
     normalizeEmail(email);
 
   const cleanPassword =
-    String(
-      password || ""
-    );
+    String(password || "");
 
   const cleanCode =
     clean(code);
 
 
-  const validationError =
-    validateRegistrationData(
-      cleanName,
-      cleanEmail,
-      cleanPassword
-    );
-
-
-  if (validationError) {
+  if (
+    !cleanName ||
+    !cleanEmail ||
+    !cleanPassword ||
+    !cleanCode
+  ) {
 
     return res.status(400).json({
 
-      success:
-        false,
+      success:false,
 
       message:
-        validationError
+        "Registration details and verification code are required."
 
     });
 
@@ -903,135 +762,118 @@ async function verifyCode(
 
     return res.status(400).json({
 
-      success:
-        false,
+      success:false,
 
       message:
-        "Please enter a valid 6-digit verification code."
+        "Enter the 6-digit verification code."
 
     });
 
   }
 
 
-  /* ---------------------------------------------------------
-     FIND OTP
-  --------------------------------------------------------- */
+  const app =
+    getAdminApp();
 
-  const emailKey =
-    hashValue(
+  const adminAuth =
+    getAuth(app);
+
+  const db =
+    getFirestore(app);
+
+
+  const otpDocId =
+    emailDocumentId(
       cleanEmail
     );
-
 
   const otpRef =
     db
       .collection(
         "adminRegistrationOtps"
       )
-      .doc(emailKey);
+      .doc(otpDocId);
 
 
-  const otpSnap =
+  const snap =
     await otpRef.get();
 
 
-  if (!otpSnap.exists) {
+  if (!snap.exists) {
 
     return res.status(400).json({
 
-      success:
-        false,
+      success:false,
 
       message:
-        "Verification code not found. Please request a new code."
+        "No active verification code. Please request a new code."
 
     });
 
   }
 
 
-  const otpData =
-    otpSnap.data();
+  const otp =
+    snap.data();
 
-
-  /* ---------------------------------------------------------
-     CHECK USED
-  --------------------------------------------------------- */
 
   if (
-    otpData.used ===
-    true
+    otp.email !==
+    cleanEmail
   ) {
 
     return res.status(400).json({
 
-      success:
-        false,
+      success:false,
 
       message:
-        "This verification code has already been used."
+        "Verification session is invalid."
 
     });
 
   }
 
 
-  /* ---------------------------------------------------------
-     CHECK EXPIRY
-  --------------------------------------------------------- */
-
-  const expiresAtMs =
-    Number(
-      otpData.expiresAtMs ||
-      0
-    );
+  const now =
+    Date.now();
 
 
   if (
-    Date.now() >
-    expiresAtMs
+    now >
+    Number(
+      otp.expiresAtMs || 0
+    )
   ) {
 
     await otpRef.delete();
 
-
     return res.status(400).json({
 
-      success:
-        false,
+      success:false,
 
       message:
-        "This verification code has expired. Please request a new code."
+        "Verification code expired. Please request a new code."
 
     });
 
   }
 
-
-  /* ---------------------------------------------------------
-     CHECK ATTEMPTS
-  --------------------------------------------------------- */
 
   const attempts =
     Number(
-      otpData.attempts ||
-      0
+      otp.attempts || 0
     );
 
 
   if (
-    attempts >=
-    MAX_ATTEMPTS
+    attempts >= 5
   ) {
 
     await otpRef.delete();
 
-
     return res.status(429).json({
 
-      success:
-        false,
+      success:false,
 
       message:
         "Too many incorrect attempts. Please request a new code."
@@ -1041,137 +883,60 @@ async function verifyCode(
   }
 
 
-  /* ---------------------------------------------------------
-     CHECK CODE
-  --------------------------------------------------------- */
-
-  const submittedHash =
+  const suppliedHash =
     hashValue(
       cleanCode
     );
 
 
   const valid =
-    safeCompare(
-      submittedHash,
-      otpData.otpHash
+    safeEqual(
+      suppliedHash,
+      otp.otpHash
     );
 
 
   if (!valid) {
 
-    const newAttempts =
-      attempts + 1;
-
-
-    if (
-      newAttempts >=
-      MAX_ATTEMPTS
-    ) {
-
-      await otpRef.delete();
-
-
-      return res.status(429).json({
-
-        success:
-          false,
-
-        message:
-          "Too many incorrect attempts. Please request a new code."
-
-      });
-
-    }
-
-
     await otpRef.update({
 
       attempts:
-        newAttempts
+        FieldValue.increment(1)
 
     });
 
 
+    const remaining =
+      Math.max(
+        0,
+        4 - attempts
+      );
+
+
     return res.status(400).json({
 
-      success:
-        false,
+      success:false,
 
       message:
-        `Incorrect verification code. ${MAX_ATTEMPTS - newAttempts} attempts remaining.`
+        remaining > 0
+          ? `Incorrect verification code. ${remaining} attempt(s) remaining.`
+          : "Incorrect verification code. Please request a new code."
 
     });
 
   }
 
 
-  /* ---------------------------------------------------------
-     RE-CHECK EMAIL
-     
-     Another account could have been created
-     while OTP was active.
-  --------------------------------------------------------- */
+  // ----------------------------------------------------------
+  // CREATE FIREBASE AUTH USER
+  // ----------------------------------------------------------
 
-  try {
-
-    await adminAuth
-      .getUserByEmail(
-        cleanEmail
-      );
-
-
-    await otpRef.delete();
-
-
-    return res.status(400).json({
-
-      success:
-        false,
-
-      message:
-        "This email is already registered."
-
-    });
-
-  } catch (error) {
-
-    if (
-      error.code !==
-      "auth/user-not-found"
-    ) {
-
-      console.error(
-        "RECHECK USER ERROR:",
-        error
-      );
-
-
-      return res.status(500).json({
-
-        success:
-          false,
-
-        message:
-          "Unable to verify account status."
-
-      });
-
-    }
-
-  }
-
-
-  /* ---------------------------------------------------------
-     CREATE FIREBASE AUTH USER
-  --------------------------------------------------------- */
-
-  let createdUser = null;
+  let user;
 
 
   try {
 
-    createdUser =
+    user =
       await adminAuth.createUser({
 
         email:
@@ -1188,14 +953,7 @@ async function verifyCode(
 
       });
 
-
   } catch (error) {
-
-    console.error(
-      "CREATE AUTH USER ERROR:",
-      error
-    );
-
 
     if (
       error.code ===
@@ -1204,11 +962,9 @@ async function verifyCode(
 
       await otpRef.delete();
 
-
       return res.status(400).json({
 
-        success:
-          false,
+        success:false,
 
         message:
           "This email is already registered."
@@ -1218,40 +974,57 @@ async function verifyCode(
     }
 
 
-    return res.status(500).json({
+    if (
+      error.code ===
+      "auth/invalid-email"
+    ) {
 
-      success:
-        false,
+      return res.status(400).json({
 
-      message:
-        "Unable to create Firebase account.",
+        success:false,
 
-      errorCode:
-        error.code ||
-        "UNKNOWN_ERROR"
+        message:
+          "Please enter a valid email address."
 
-    });
+      });
+
+    }
+
+
+    if (
+      error.code ===
+      "auth/weak-password"
+    ) {
+
+      return res.status(400).json({
+
+        success:false,
+
+        message:
+          "Password must contain at least 6 characters."
+
+      });
+
+    }
+
+    throw error;
 
   }
 
 
-  /* ---------------------------------------------------------
-     CREATE FIRESTORE PROFILE
-  --------------------------------------------------------- */
+  // ----------------------------------------------------------
+  // CREATE FIRESTORE PROFILE
+  // ----------------------------------------------------------
 
   try {
 
     await db
-      .collection(
-        "users"
-      )
-      .doc(
-        createdUser.uid
-      )
+      .collection("users")
+      .doc(user.uid)
       .set({
 
         uid:
-          createdUser.uid,
+          user.uid,
 
         name:
           cleanName,
@@ -1273,21 +1046,13 @@ async function verifyCode(
 
   } catch (error) {
 
-    console.error(
-      "CREATE PROFILE ERROR:",
-      error
-    );
-
-
-    /* -------------------------------------------------------
-       CLEANUP AUTH USER IF PROFILE CREATION FAILS
-    ------------------------------------------------------- */
+    // Cleanup Auth account if profile creation fails.
 
     try {
 
       await adminAuth
         .deleteUser(
-          createdUser.uid
+          user.uid
         );
 
     } catch (
@@ -1301,50 +1066,32 @@ async function verifyCode(
 
     }
 
-
-    return res.status(500).json({
-
-      success:
-        false,
-
-      message:
-        "Account creation failed while saving your profile."
-
-    });
+    throw error;
 
   }
 
 
-  /* ---------------------------------------------------------
-     OTP ONE-TIME USE
-  --------------------------------------------------------- */
-
   await otpRef.delete();
 
 
-  /* ---------------------------------------------------------
-     SUCCESS
-  --------------------------------------------------------- */
-
   return res.status(201).json({
 
-    success:
-      true,
+    success:true,
 
     message:
-      "Admin account created successfully.",
+      "Email verified. Your account has been created.",
 
     uid:
-      createdUser.uid
+      user.uid
 
   });
 
 }
 
 
-/* =========================================================
-   MAIN HANDLER
-========================================================= */
+// ============================================================
+// MAIN HANDLER
+// ============================================================
 
 export default async function handler(
   req,
@@ -1358,8 +1105,7 @@ export default async function handler(
 
     return res.status(405).json({
 
-      success:
-        false,
+      success:false,
 
       message:
         "Method not allowed."
@@ -1371,27 +1117,11 @@ export default async function handler(
 
   try {
 
-    const app =
-      getAdminApp();
-
-
-    const adminAuth =
-      getAuth(app);
-
-
-    const db =
-      getFirestore(app);
-
-
     const action =
       clean(
         req.body?.action
       );
 
-
-    /* -------------------------------------------------------
-       SEND CODE
-    ------------------------------------------------------- */
 
     if (
       action ===
@@ -1400,17 +1130,11 @@ export default async function handler(
 
       return await sendCode(
         req,
-        res,
-        db,
-        adminAuth
+        res
       );
 
     }
 
-
-    /* -------------------------------------------------------
-       VERIFY CODE
-    ------------------------------------------------------- */
 
     if (
       action ===
@@ -1419,9 +1143,7 @@ export default async function handler(
 
       return await verifyCode(
         req,
-        res,
-        db,
-        adminAuth
+        res
       );
 
     }
@@ -1429,8 +1151,7 @@ export default async function handler(
 
     return res.status(400).json({
 
-      success:
-        false,
+      success:false,
 
       message:
         "Invalid registration action."
@@ -1441,7 +1162,7 @@ export default async function handler(
   } catch (error) {
 
     console.error(
-      "REGISTER ADMIN API ERROR:",
+      "REGISTER ADMIN ERROR:",
       error
     );
 
@@ -1454,11 +1175,10 @@ export default async function handler(
 
       return res.status(500).json({
 
-        success:
-          false,
+        success:false,
 
         message:
-          "Firebase server configuration is missing. Check FIREBASE_SERVICE_ACCOUNT_KEY in Vercel."
+          "Firebase server configuration is missing. Check Vercel Environment Variables."
 
       });
 
@@ -1473,11 +1193,10 @@ export default async function handler(
 
       return res.status(500).json({
 
-        success:
-          false,
+        success:false,
 
         message:
-          "Firebase server configuration is invalid. Check FIREBASE_SERVICE_ACCOUNT_KEY."
+          "Firebase server configuration is invalid."
 
       });
 
@@ -1492,8 +1211,7 @@ export default async function handler(
 
       return res.status(500).json({
 
-        success:
-          false,
+        success:false,
 
         message:
           "Firebase service account configuration is incomplete."
@@ -1503,21 +1221,52 @@ export default async function handler(
     }
 
 
+    if (
+      error.message?.includes(
+        "RESEND_API_KEY"
+      )
+    ) {
+
+      return res.status(500).json({
+
+        success:false,
+
+        message:
+          "Email service is not configured. Check RESEND_API_KEY in Vercel."
+
+      });
+
+    }
+
+
+    if (
+      error.message?.includes(
+        "RESEND_FROM_EMAIL"
+      )
+    ) {
+
+      return res.status(500).json({
+
+        success:false,
+
+        message:
+          "Email sender is not configured. Check RESEND_FROM_EMAIL in Vercel."
+
+      });
+
+    }
+
+
     return res.status(500).json({
 
-      success:
-        false,
+      success:false,
 
       message:
         error.message ||
-        "Unable to process registration.",
-
-      errorCode:
-        error.code ||
-        "UNKNOWN_ERROR"
+        "Unable to process registration."
 
     });
 
   }
 
-                    }
+    }
