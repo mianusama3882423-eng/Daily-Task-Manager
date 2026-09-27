@@ -2357,72 +2357,641 @@ function renderStudents() {
                     ${esc(
                       student.className ||
                       "—"
-                    )}
-                  </td>
+/* =========================================================
+   PROFESSIONAL STUDENTS PAGE
+   Version 3.1.0
+========================================================= */
 
-                  <td>
-                    ${esc(
-                      student.age ||
-                      "—"
-                    )}
-                  </td>
+function renderStudents() {
 
-                  <td>
-                    ${esc(
-                      isSuperAdmin()
-                        ? adminName
-                        : "You"
-                    )}
-                  </td>
+  const container =
+    $("studentsList");
 
-                  <td>
-                    ${statusBadge(
-                      student.active === false
-                        ? "inactive"
-                        : "active"
-                    )}
-                  </td>
+  if (!container) {
+    return;
+  }
 
-                  <td>
 
+  const search =
+    clean(
+      $("studentSearch")?.value
+    ).toLowerCase();
+
+
+  const students =
+    state.students.filter(
+      student => {
+
+        const text = [
+
+          student.name,
+
+          student.email,
+
+          student.className,
+
+          student.age
+
+        ]
+          .join(" ")
+          .toLowerCase();
+
+
+        return text.includes(
+          search
+        );
+
+      }
+    );
+
+
+  const totalStudents =
+    state.students.length;
+
+
+  const activeStudents =
+    state.students.filter(
+      student =>
+        student.active !== false
+    ).length;
+
+
+  const inactiveStudents =
+    state.students.filter(
+      student =>
+        student.active === false
+    ).length;
+
+
+  const totalTasks =
+    state.tasks.length;
+
+
+  container.innerHTML = `
+
+    <div class="students-dashboard">
+
+      <div class="student-summary-grid">
+
+        <div class="student-summary-card">
+
+          <div class="student-summary-icon">
+            👥
+          </div>
+
+          <div>
+
+            <span>
+              Total Students
+            </span>
+
+            <strong>
+              ${totalStudents}
+            </strong>
+
+          </div>
+
+        </div>
+
+
+        <div class="student-summary-card">
+
+          <div class="student-summary-icon">
+            ✓
+          </div>
+
+          <div>
+
+            <span>
+              Active Students
+            </span>
+
+            <strong>
+              ${activeStudents}
+            </strong>
+
+          </div>
+
+        </div>
+
+
+        <div class="student-summary-card">
+
+          <div class="student-summary-icon">
+            ●
+          </div>
+
+          <div>
+
+            <span>
+              Inactive Students
+            </span>
+
+            <strong>
+              ${inactiveStudents}
+            </strong>
+
+          </div>
+
+        </div>
+
+
+        <div class="student-summary-card">
+
+          <div class="student-summary-icon">
+            📝
+          </div>
+
+          <div>
+
+            <span>
+              Assigned Tasks
+            </span>
+
+            <strong>
+              ${totalTasks}
+            </strong>
+
+          </div>
+
+        </div>
+
+      </div>
+
+
+      <div class="students-toolbar">
+
+        <div>
+
+          <h2>
+            Student Directory
+          </h2>
+
+          <p>
+            Manage student accounts and monitor their basic information.
+          </p>
+
+        </div>
+
+
+        <div class="student-toolbar-actions">
+
+          <div class="student-search-box">
+
+            <span>
+              🔎
+            </span>
+
+            <input
+              id="studentSearchProfessional"
+              type="search"
+              placeholder="Search students..."
+              value="${esc(search)}"
+            >
+
+          </div>
+
+
+          <button
+            class="primary-btn student-add-btn"
+            id="professionalAddStudent"
+          >
+            + Add Student
+          </button>
+
+        </div>
+
+      </div>
+
+
+      ${
+        !students.length
+          ? `
+
+            <div class="student-empty-card">
+
+              <div class="student-empty-icon">
+                👥
+              </div>
+
+              <h3>
+                No students found
+              </h3>
+
+              <p>
+                ${
+                  search
+                    ? "Try a different search term."
+                    : "Create your first student account to get started."
+                }
+              </p>
+
+              ${
+                !search
+                  ? `
                     <button
-                      class="danger-btn"
-                      data-delete-student="${student.id}"
+                      class="primary-btn"
+                      id="professionalAddStudentEmpty"
                     >
-                      Delete
+                      + Add Student
                     </button>
+                  `
+                  : ""
+              }
 
-                  </td>
+            </div>
 
-                </tr>
-              `;
+          `
+          : `
 
-            }
-          )
-          .join("")}
+            <div class="students-table-card">
 
-      </tbody>
+              <div class="students-table-header">
 
-    </table>
+                <div>
+
+                  <strong>
+                    ${students.length}
+                    ${
+                      students.length === 1
+                        ? " Student"
+                        : " Students"
+                    }
+                  </strong>
+
+                  <span>
+                    Current records
+                  </span>
+
+                </div>
+
+              </div>
+
+
+              <div class="students-table-wrap">
+
+                <table class="professional-students-table">
+
+                  <thead>
+
+                    <tr>
+
+                      <th>
+                        Student
+                      </th>
+
+                      <th>
+                        Class
+                      </th>
+
+                      <th>
+                        Age
+                      </th>
+
+                      ${
+                        isSuperAdmin()
+                          ? `
+                            <th>
+                              Assigned Admin
+                            </th>
+                          `
+                          : ""
+                      }
+
+                      <th>
+                        Status
+                      </th>
+
+                      <th>
+                        Actions
+                      </th>
+
+                    </tr>
+
+                  </thead>
+
+
+                  <tbody>
+
+                    ${students
+                      .map(
+                        student => {
+
+                          const admin =
+                            state.admins.find(
+                              x =>
+                                x.id ===
+                                student.adminId
+                            );
+
+
+                          const adminName =
+                            admin?.name ||
+                            (
+                              student.adminId
+                                ? "Assigned Admin"
+                                : "Unassigned"
+                            );
+
+
+                          const studentName =
+                            student.name ||
+                            "Student";
+
+
+                          const initialsText =
+                            initials(
+                              studentName
+                            );
+
+
+                          const studentTasks =
+                            state.tasks.filter(
+                              task =>
+                                task.studentId ===
+                                student.id
+                            );
+
+
+                          const completedTasks =
+                            studentTasks.filter(
+                              task =>
+                                task.status ===
+                                "completed"
+                            ).length;
+
+
+                          const progress =
+                            studentTasks.length
+                              ? Math.round(
+                                  completedTasks /
+                                  studentTasks.length *
+                                  100
+                                )
+                              : 0;
+
+
+                          return `
+
+                            <tr>
+
+                              <td>
+
+                                <div
+                                  class="student-profile-cell"
+                                >
+
+                                  <div
+                                    class="student-avatar"
+                                  >
+                                    ${esc(
+                                      initialsText
+                                    )}
+                                  </div>
+
+
+                                  <div
+                                    class="student-profile-info"
+                                  >
+
+                                    <strong>
+                                      ${esc(
+                                        studentName
+                                      )}
+                                    </strong>
+
+                                    <span>
+                                      ${esc(
+                                        student.email ||
+                                        "No email"
+                                      )}
+                                    </span>
+
+                                  </div>
+
+                                </div>
+
+                              </td>
+
+
+                              <td>
+
+                                <span
+                                  class="student-class-badge"
+                                >
+                                  ${esc(
+                                    student.className ||
+                                    "Not set"
+                                  )}
+                                </span>
+
+                              </td>
+
+
+                              <td>
+
+                                <span
+                                  class="student-age"
+                                >
+                                  ${
+                                    student.age
+                                      ? `${esc(student.age)} years`
+                                      : "—"
+                                  }
+                                </span>
+
+                              </td>
+
+
+                              ${
+                                isSuperAdmin()
+                                  ? `
+
+                                    <td>
+
+                                      <div
+                                        class="student-admin-cell"
+                                      >
+
+                                        <strong>
+                                          ${esc(
+                                            adminName
+                                          )}
+                                        </strong>
+
+                                        ${
+                                          admin?.email
+                                            ? `
+                                              <span>
+                                                ${esc(
+                                                  admin.email
+                                                )}
+                                              </span>
+                                            `
+                                            : ""
+                                        }
+
+                                      </div>
+
+                                    </td>
+
+                                  `
+                                  : ""
+                              }
+
+
+                              <td>
+
+                                ${
+                                  student.active === false
+                                    ? `
+                                      <span
+                                        class="student-status inactive"
+                                      >
+                                        <i></i>
+                                        Inactive
+                                      </span>
+                                    `
+                                    : `
+                                      <span
+                                        class="student-status active"
+                                      >
+                                        <i></i>
+                                        Active
+                                      </span>
+                                    `
+                                }
+
+                              </td>
+
+
+                              <td>
+
+                                <div
+                                  class="student-actions"
+                                >
+
+                                  <div
+                                    class="student-mini-progress"
+                                  >
+
+                                    <div
+                                      class="student-mini-progress-top"
+                                    >
+
+                                      <span>
+                                        Progress
+                                      </span>
+
+                                      <strong>
+                                        ${progress}%
+                                      </strong>
+
+                                    </div>
+
+                                    <div
+                                      class="student-mini-track"
+                                    >
+
+                                      <div
+                                        style="width:${progress}%"
+                                      ></div>
+
+                                    </div>
+
+                                  </div>
+
+
+                                  <button
+                                    class="danger-btn student-delete-btn"
+                                    data-delete-student="${student.id}"
+                                    title="Delete student"
+                                  >
+                                    Delete
+                                  </button>
+
+                                </div>
+
+                              </td>
+
+                            </tr>
+
+                          `;
+
+                        }
+                      )
+                      .join("")}
+
+                  </tbody>
+
+                </table>
+
+              </div>
+
+            </div>
+
+          `
+      }
+
+    </div>
+
   `;
+
+
+  const searchBox =
+    $("studentSearchProfessional");
+
+
+  searchBox?.addEventListener(
+    "input",
+    () => {
+
+      const oldSearch =
+        $("studentSearch");
+
+      if (oldSearch) {
+        oldSearch.value =
+          searchBox.value;
+      }
+
+      renderStudents();
+
+    }
+  );
+
+
+  $("professionalAddStudent")
+    ?.addEventListener(
+      "click",
+      openStudentModal
+    );
+
+
+  $("professionalAddStudentEmpty")
+    ?.addEventListener(
+      "click",
+      openStudentModal
+    );
 
 
   container
     .querySelectorAll(
       "[data-delete-student]"
     )
-    .forEach(button => {
+    .forEach(
+      button => {
 
-      button.addEventListener(
-        "click",
-        () =>
-          deleteStudent(
-            button.dataset
-              .deleteStudent
-          )
-      );
+        button.addEventListener(
+          "click",
+          () =>
+            deleteStudent(
+              button.dataset
+                .deleteStudent
+            )
+        );
 
-    });
+      }
+    );
 
 }
 
