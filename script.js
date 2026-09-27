@@ -36,7 +36,7 @@ import {
    CONFIG
 ========================================================= */
 
-const VERSION = "v3.0.0";
+const VERSION = "v3.1.0";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBHerMjZdE-OTlqtdzS35k3V15SEHzuVc",
